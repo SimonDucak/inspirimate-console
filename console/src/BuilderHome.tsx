@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, App, Agent, Preset, GitCredential, ModelProvider } from './api'
-import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
+import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice, withPreferred } from './AgentPicker'
 import { Icon } from './design/Icon'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
@@ -85,6 +85,7 @@ export function BuilderHome({
           setAgents(a)
           setProviders(m)
           setCreds(g)
+          setChoice((current) => withPreferred(current, m))
         }
       })
       .catch(() => {

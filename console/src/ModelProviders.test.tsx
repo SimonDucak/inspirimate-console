@@ -8,6 +8,8 @@ vi.mock('./api', () => ({ api: {
   saveModelProvider: vi.fn(),
   deleteModelProvider: vi.fn(),
   testModelProvider: vi.fn(),
+  setModelProviderDefault: vi.fn(),
+  clearModelProviderDefault: vi.fn(),
 } }))
 
 const saved: ModelProvider = {
@@ -45,7 +47,7 @@ describe('Model connections', () => {
   it('keeps an existing key when editing with a blank key field; tests only on explicit request', async () => {
     vi.mocked(api.listModelProviders).mockResolvedValue([saved])
     render(<ModelProviders onError={onError} toast={toast} />)
-    await screen.findByText('Local gateway')
+    await screen.findByText('API key saved')
     expect(api.testModelProvider).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('Test model'))
     await screen.findByText('Model responded successfully.')
@@ -68,5 +70,20 @@ describe('Model connections', () => {
     fireEvent.submit(screen.getByText('Save connection').closest('form')!)
     await waitFor(() => expect(api.saveModelProvider).toHaveBeenCalled())
     expect(vi.mocked(api.saveModelProvider).mock.calls[0][1].api_key).toBe('')
+  })
+
+  it('saves one connection and one of its models as the default for new tasks', async () => {
+    const models = [
+      saved.models[0],
+      { id: 'openai/gpt-4.1', context_window: 128000, max_tokens: 4096 },
+    ]
+    vi.mocked(api.listModelProviders).mockResolvedValue([{ ...saved, models }])
+    vi.mocked(api.setModelProviderDefault).mockResolvedValue({ ...saved, models, default: true, default_model: 'openai/gpt-4.1' })
+    render(<ModelProviders onError={onError} toast={toast} />)
+    fireEvent.change(await screen.findByLabelText('Default connection'), { target: { value: saved.id } })
+    fireEvent.change(screen.getByLabelText('Default model'), { target: { value: 'openai/gpt-4.1' } })
+    fireEvent.click(screen.getByText('Save default'))
+    await waitFor(() => expect(api.setModelProviderDefault).toHaveBeenCalledWith(saved.id, 'openai/gpt-4.1'))
+    expect(onError).not.toHaveBeenCalled()
   })
 })

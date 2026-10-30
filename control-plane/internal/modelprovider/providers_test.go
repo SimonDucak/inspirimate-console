@@ -330,3 +330,68 @@ func TestProbeUsesSelectedModelAndRedactsUpstreamErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultConnectionSurvivesSaveAndSelectsItsModel(t *testing.T) {
+	s, _ := testService(t)
+	ctx := context.Background()
+	first, err := s.Save(ctx, "", Input{Name: "First", Protocol: OpenAI, BaseURL: "http://localhost:1/v1",
+		Models: []Model{{ID: "alpha"}, {ID: "beta"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Save(ctx, "", Input{Name: "Second", Protocol: OpenAI, BaseURL: "http://localhost:2/v1",
+		Models: []Model{{ID: "gamma"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chosen, err := s.SetDefault(ctx, first.ID, "beta")
+	if err != nil || !chosen.Default || chosen.DefaultModel != "beta" {
+		t.Fatalf("default not saved: %+v %v", chosen, err)
+	}
+	if _, err := s.SetDefault(ctx, first.ID, "missing"); err == nil {
+		t.Fatal("accepted a model that is not on the connection")
+	}
+	other, err := s.SetDefault(ctx, second.ID, "gamma")
+	if err != nil || !other.Default {
+		t.Fatal(err)
+	}
+	list, err := s.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range list {
+		if c.ID == first.ID && c.Default {
+			t.Fatal("previous default was not cleared")
+		}
+	}
+	conn, err := s.Connection(ctx, second.ID, "", "http://proxy:9100", time.Minute)
+	if err != nil || conn.Model.ID != "gamma" {
+		t.Fatalf("omitted model = %v %v", conn, err)
+	}
+	revision := other
+	saved, err := s.Save(ctx, second.ID, Input{Name: "Second", Protocol: OpenAI, BaseURL: "http://localhost:2/v1",
+		Models: []Model{{ID: "gamma"}, {ID: "delta"}}})
+	if err != nil || !saved.Default || saved.DefaultModel != "gamma" {
+		t.Fatalf("save cleared the default: %+v %v", saved, err)
+	}
+	if saved.ID != revision.ID {
+		t.Fatal("save replaced the connection")
+	}
+	saved, err = s.Save(ctx, second.ID, Input{Name: "Second", Protocol: OpenAI, BaseURL: "http://localhost:2/v1",
+		Models: []Model{{ID: "delta"}}})
+	if err != nil || saved.DefaultModel != "delta" {
+		t.Fatalf("removed default model was not replaced: %+v %v", saved, err)
+	}
+	if _, err := s.SetDefault(ctx, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	list, err = s.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range list {
+		if c.Default {
+			t.Fatal("clear left a default connection")
+		}
+	}
+}

@@ -2,6 +2,22 @@ import type { Agent, ModelProvider } from './api'
 
 export type AgentChoice = { agent: string; provider: string; model: string }
 export const defaultChoice: AgentChoice = { agent: 'opencode', provider: '', model: '' }
+
+export function preferredModel(provider: ModelProvider) {
+  if (provider.default_model && provider.models.some((model) => model.id === provider.default_model)) {
+    return provider.default_model
+  }
+  return provider.models[0]?.id || ''
+}
+
+// withPreferred fills an untouched OpenCode choice with the connection and model
+// saved in Settings. An explicit agent, connection, or model is left as chosen.
+export function withPreferred(choice: AgentChoice, providers: ModelProvider[]): AgentChoice {
+  if (choice.agent !== 'opencode' || choice.provider || choice.model) return choice
+  const saved = providers.find((provider) => provider.default)
+  if (!saved) return choice
+  return { agent: 'opencode', provider: saved.id, model: preferredModel(saved) }
+}
 export type BuildIntent = AgentChoice & { prompt: string }
 
 export function AgentPicker({
@@ -18,6 +34,11 @@ export function AgentPicker({
   disabled?: boolean
 }) {
   const selected = providers.find((p) => p.id === value.provider)
+  const modelValue = selected
+    ? selected.models.some((model) => model.id === value.model)
+      ? value.model
+      : preferredModel(selected)
+    : value.model
   return (
     <div className="agent-picker">
       <label>
@@ -47,7 +68,10 @@ export function AgentPicker({
             aria-label="Model connection"
             data-testid="task-provider"
             value={value.provider}
-            onChange={(e) => onChange({ ...value, provider: e.target.value, model: '' })}
+            onChange={(e) => {
+              const next = providers.find((provider) => provider.id === e.target.value)
+              onChange({ ...value, provider: e.target.value, model: next ? preferredModel(next) : '' })
+            }}
           >
             <option value="">{value.agent === 'pi' ? 'Select a connection…' : 'Built-in provider'}</option>
             {providers.map((p) => (
@@ -63,13 +87,19 @@ export function AgentPicker({
         <select
           disabled={disabled}
           data-testid="task-model"
-          value={value.model}
+          value={modelValue}
           onChange={(e) => onChange({ ...value, model: e.target.value })}
         >
-          <option value="">{selected ? `${selected.models[0].id} (default)` : 'Default model'}</option>
-          {selected?.models.slice(1).map((m) => (
-            <option key={m.id}>{m.id}</option>
-          ))}
+          {selected ? (
+            selected.models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.id}
+                {model.id === preferredModel(selected) ? ' (default)' : ''}
+              </option>
+            ))
+          ) : (
+            <option value="">Default model</option>
+          )}
           {!value.provider &&
             value.agent === 'opencode' &&
             ['glm-5', 'kimi-k2.6', 'deepseek-v4-pro', 'MiniMax-M3.1-Flash', 'MiniMax-M3'].map((m) => (

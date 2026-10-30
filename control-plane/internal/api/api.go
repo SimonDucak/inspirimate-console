@@ -281,6 +281,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/model-providers", s.observe("POST /v1/model-providers", s.v1SaveModelProvider))
 	mux.HandleFunc("PUT /v1/model-providers/{id}", s.observe("PUT /v1/model-providers/{id}", s.v1SaveModelProvider))
 	mux.HandleFunc("DELETE /v1/model-providers/{id}", s.observe("DELETE /v1/model-providers/{id}", s.v1DeleteModelProvider))
+	mux.HandleFunc("PUT /v1/model-providers/{id}/default", s.observe("PUT /v1/model-providers/{id}/default", s.v1SetModelProviderDefault))
+	mux.HandleFunc("DELETE /v1/model-providers/default", s.observe("DELETE /v1/model-providers/default", s.v1ClearModelProviderDefault))
 	mux.HandleFunc("POST /v1/model-providers/{id}/test", s.observe("POST /v1/model-providers/{id}/test", s.v1TestModelProvider))
 	mux.HandleFunc("GET /v1/agents", s.observe("GET /v1/agents", s.v1ListAgents))
 	mux.HandleFunc("POST /v1/agents/claude-code/oauth/start", s.observe("POST /v1/agents/claude-code/oauth/start", s.v1AgentOAuthStart))

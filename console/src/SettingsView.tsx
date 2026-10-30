@@ -295,7 +295,7 @@ export function SettingsView({
               <Card pad style={{ marginTop: 20 }} data-testid="settings-agent-models">
                 <h3>Default models</h3>
                 <p className="field-help">
-                  For built-in provider accounts. Model connections use their first listed model by default.
+                  For built-in provider accounts. Choose a default model connection under Model connections.
                 </p>
                 <form
                   className="settings-form"

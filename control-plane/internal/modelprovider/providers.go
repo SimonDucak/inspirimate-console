@@ -39,6 +39,10 @@ type Config struct {
 	BaseURL   string  `json:"base_url"`
 	Models    []Model `json:"models"`
 	HasAPIKey bool    `json:"has_api_key"`
+	// Default is the connection the console preselects. DefaultModel is the
+	// model preselected on that connection; empty means the first configured model.
+	Default      bool   `json:"default,omitempty"`
+	DefaultModel string `json:"default_model,omitempty"`
 }
 
 // Input uses nil to preserve an existing key; an empty string removes it.
@@ -157,6 +161,15 @@ func validate(in *Input) error {
 	return nil
 }
 
+func modelConfigured(models []Model, id string) bool {
+	for _, m := range models {
+		if m.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func randomID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -201,7 +214,57 @@ func (s *Service) Save(ctx context.Context, id string, in Input) (Config, error)
 	if err != nil {
 		return Config{}, err
 	}
-	return c, s.store.SaveModelProvider(ctx, row)
+	if err := s.store.SaveModelProvider(ctx, row); err != nil {
+		return Config{}, err
+	}
+	ids := make([]string, len(c.Models))
+	for i, m := range c.Models {
+		ids[i] = m.ID
+	}
+	if err := s.store.RetainDefaultModel(ctx, id, ids); err != nil {
+		return Config{}, err
+	}
+	return s.publicConfig(ctx, id)
+}
+
+// SetDefault makes one connection the instance default and records which of
+// its models the console should preselect. An empty id clears the default.
+// An empty model selects the connection's first model. The revision is unchanged.
+func (s *Service) SetDefault(ctx context.Context, id, model string) (Config, error) {
+	if id == "" {
+		return Config{}, s.store.SetModelProviderDefault(ctx, "", "")
+	}
+	row, err := s.store.GetModelProvider(ctx, id)
+	if err != nil {
+		return Config{}, err
+	}
+	var c Config
+	if err := json.Unmarshal([]byte(row.ConfigJSON), &c); err != nil {
+		return Config{}, errors.New("invalid stored provider configuration")
+	}
+	if model == "" && len(c.Models) > 0 {
+		model = c.Models[0].ID
+	}
+	if !modelConfigured(c.Models, model) {
+		return Config{}, errors.New("model is not configured for this connection")
+	}
+	if err := s.store.SetModelProviderDefault(ctx, id, model); err != nil {
+		return Config{}, err
+	}
+	return s.publicConfig(ctx, id)
+}
+
+func (s *Service) publicConfig(ctx context.Context, id string) (Config, error) {
+	list, err := s.List(ctx)
+	if err != nil {
+		return Config{}, err
+	}
+	for _, c := range list {
+		if c.ID == id {
+			return c, nil
+		}
+	}
+	return Config{}, store.ErrNotFound
 }
 
 func (s *Service) List(ctx context.Context) ([]Config, error) {
@@ -214,6 +277,10 @@ func (s *Service) List(ctx context.Context) ([]Config, error) {
 		var c Config
 		if err := json.Unmarshal([]byte(row.ConfigJSON), &c); err != nil {
 			return nil, errors.New("invalid stored provider configuration")
+		}
+		c.Default = row.Default
+		if modelConfigured(c.Models, row.DefaultModel) {
+			c.DefaultModel = row.DefaultModel
 		}
 		out = append(out, c)
 	}
@@ -249,7 +316,10 @@ func (s *Service) Connection(ctx context.Context, id, model, proxyURL string, tt
 		return nil, errors.New("provider proxy is unavailable or task lifetime is invalid")
 	}
 	if model == "" {
-		model = c.Models[0].ID
+		model = row.DefaultModel
+		if !modelConfigured(c.Models, model) {
+			model = c.Models[0].ID
+		}
 	}
 	for _, m := range c.Models {
 		if m.ID != model {

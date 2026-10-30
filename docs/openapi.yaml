@@ -493,6 +493,34 @@ paths:
       responses:
         "204": { description: Deleted }
         "404": { description: Connection not found }
+  /v1/model-providers/{id}/default:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      operationId: setModelProviderDefault
+      summary: Preselect this connection and one of its models for new tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: { type: string, description: Configured model ID. The first model is used when omitted. }
+      responses:
+        "200":
+          description: This connection is now the default. Existing task access is unchanged.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelProvider" }
+        "400": { description: Model is not configured on this connection }
+        "404": { description: Connection not found }
+  /v1/model-providers/default:
+    delete:
+      operationId: clearModelProviderDefault
+      summary: Stop preselecting a model connection
+      responses:
+        "204": { description: Cleared }
   /v1/model-providers/{id}/test:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -1718,6 +1746,8 @@ components:
           type: array
           items: { $ref: "#/components/schemas/ProviderModel" }
         has_api_key: { type: boolean }
+        default: { type: boolean, description: True when this connection is preselected for new tasks. }
+        default_model: { type: string, description: Model preselected on the default connection. Empty means the first configured model. }
     Settings:
       type: object
       description: Read-only instance summary (GET /v1/settings) and the shape returned by PATCH.
@@ -1947,7 +1977,7 @@ components:
       properties:
         prompt: { type: string }
         agent: { type: string, enum: [opencode, pi, claude-code, codex], default: opencode }
-        provider: { type: string, description: "Configured model connection ID, supported by OpenCode and Pi. Required for Pi. With a connection, model is an exact configured ID; omitted selects its first model." }
+        provider: { type: string, description: "Configured model connection ID, supported by OpenCode and Pi. Required for Pi. With a connection, model is an exact configured ID; omitted selects its saved default model, or the first model when none is saved." }
         continue: { type: boolean, default: true, description: Resume this agent session when available }
         model:
           type: string

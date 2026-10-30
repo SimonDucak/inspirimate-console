@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, Agent, ModelProvider, Sandbox, TaskSummary } from './api'
-import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice } from './AgentPicker'
+import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice, preferredModel, withPreferred } from './AgentPicker'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { AgentMessage } from './AgentMessage'
@@ -75,6 +75,12 @@ export function AgentChat({
       .catch((e) => setError((e as Error).message))
   }, [])
   useEffect(loadOptions, [loadOptions])
+  const appliedDefault = useRef(false)
+  useEffect(() => {
+    if (!loaded || initialBuild || appliedDefault.current) return
+    appliedDefault.current = true
+    setChoice((current) => withPreferred(current, providers))
+  }, [loaded, providers, initialBuild])
 
   const loadHistory = useCallback(async () => {
     if (!sbID) return
@@ -157,12 +163,14 @@ export function AgentChat({
     setText('')
     setResponse('')
     setActive({ id: '', prompt, status: 'starting', can_revert: false })
+    const selected = providers.find((provider) => provider.id === choice.provider)
+    const model = choice.model || (selected ? preferredModel(selected) : '')
     try {
       const task = await api.submitTask(
         sbID,
         prompt,
         choice.agent,
-        choice.model || undefined,
+        model || undefined,
         auto ? false : cont,
         choice.provider || undefined,
       )

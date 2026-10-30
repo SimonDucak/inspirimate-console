@@ -352,6 +352,8 @@ export interface ModelProviderInput {
 export interface ModelProvider extends Omit<ModelProviderInput, 'api_key'> {
  id: string
  has_api_key: boolean
+ default?: boolean
+ default_model?: string
 }
 
 export const api = {
@@ -360,6 +362,9 @@ export const api = {
    req<ModelProvider>(id ? 'PUT' : 'POST', id ? `/v1/model-providers/${encodeURIComponent(id)}` : '/v1/model-providers', input),
  deleteModelProvider: (id: string) => req<void>('DELETE', `/v1/model-providers/${encodeURIComponent(id)}`),
  testModelProvider: (id: string, model: string) => req<{ok: boolean}>('POST', `/v1/model-providers/${encodeURIComponent(id)}/test`, {model}),
+ setModelProviderDefault: (id: string, model: string) =>
+   req<ModelProvider>('PUT', `/v1/model-providers/${encodeURIComponent(id)}/default`, { model }),
+ clearModelProviderDefault: () => req<void>('DELETE', '/v1/model-providers/default'),
   getUpgrade: () => req<UpgradeState>('GET', '/v1/upgrade'),
   startUpgrade: (target: string) => req<UpgradeState>('POST', '/v1/upgrade', { target }),
   listApps: () => req<{ apps: App[] }>('GET', '/v1/apps').then((r) => r.apps || []),

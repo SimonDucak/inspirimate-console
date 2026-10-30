@@ -16,7 +16,9 @@ no restart.
 1. Open **Settings → Model connections → Add connection**.
 2. Enter a name, API format, API base URL, and optional API key.
 3. Add the server's exact model IDs or gateway aliases. Slashes and colons are
-   preserved. The first model is the connection's default.
+   preserved. Under **Default for new tasks**, choose the connection and model
+   OpenCode should start with. Until you choose one, an omitted model uses the
+   first model on that connection.
 4. Set each model's context window and maximum output under **Token limits**.
    Defaults are 32,768 context tokens and 4,096 output tokens; adjust them to
    match your server.
@@ -104,9 +106,13 @@ list/create/update responses return `has_api_key`, never the key.
 `DELETE /v1/model-providers/{id}` removes the connection.
 `POST /v1/model-providers/{id}/test` with `{"model":"exact-model-id"}` performs
 one small inference request. An empty object tests the first model.
+`PUT /v1/model-providers/{id}/default` with `{"model":"exact-model-id"}` makes
+that connection and model the ones the console preselects.
+`DELETE /v1/model-providers/default` clears that choice.
 
-An omitted task model selects the connection's first model. Explicit models
-must exist in that connection. There is no silent fallback to a hosted provider
+An omitted task model selects the connection's saved default model, or its
+first model when none is saved. Explicit models must exist in that connection.
+There is no silent fallback to a hosted provider
 if a custom connection fails. Custom connections currently serve OpenCode and
 Pi; Claude Code's existing subscription/API-key flow remains separate.
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ModelProvider, ModelProviderInput } from './api'
+import { preferredModel } from './AgentPicker'
 import { Btn, Card, H, Input, Pill, c, mono } from './design/kit'
 
 const emptyModel = () => ({ id: '', context_window: 32768, max_tokens: 4096 })
@@ -20,6 +21,8 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
   const [confirmDelete, setConfirmDelete] = useState('')
   const [testResults, setTestResults] = useState<Record<string, string>>({})
   const [testModels, setTestModels] = useState<Record<string, string>>({})
+  const [defaultId, setDefaultId] = useState('')
+  const [defaultModel, setDefaultModel] = useState('')
 
   const load = useCallback(async () => {
     try { setProviders(await api.listModelProviders()) }
@@ -27,6 +30,11 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
     finally { setLoading(false) }
   }, [onError])
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    const current = providers.find((provider) => provider.default)
+    setDefaultId(current?.id || '')
+    setDefaultModel(current ? preferredModel(current) : '')
+  }, [providers])
 
   const edit = (p?: ModelProvider) => {
     setEditing(p?.id || '')
@@ -60,6 +68,21 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
     } catch (e) { setTestResults((r) => ({ ...r, [p.id]: (e as Error).message })) }
     finally { setBusy('') }
   }
+  const chooseDefaultConnection = (id: string) => {
+    const next = providers.find((provider) => provider.id === id)
+    setDefaultId(id)
+    setDefaultModel(next ? preferredModel(next) : '')
+  }
+  const saveDefault = async () => {
+    setBusy('default')
+    try {
+      if (defaultId) await api.setModelProviderDefault(defaultId, defaultModel)
+      else await api.clearModelProviderDefault()
+      await load()
+      toast(defaultId ? 'Default model saved' : 'Default model cleared')
+    } catch (e) { onError((e as Error).message) }
+    finally { setBusy('') }
+  }
   const updateModel = (index: number, patch: Partial<ModelProviderInput['models'][number]>) =>
     setForm((f) => ({ ...f, models: f.models.map((m, i) => i === index ? { ...m, ...patch } : m) }))
 
@@ -73,6 +96,27 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
       or Anthropic-compatible API, including Ollama, LM Studio, vLLM and LiteLLM gateways.
       API keys stay encrypted on the control plane.
     </p>
+    {!loading && providers.length > 0 && <form onSubmit={(e) => { e.preventDefault(); void saveDefault() }}
+      style={{ display: 'grid', gap: 12, margin: '14px 0', padding: 12, background: c.panel2, borderRadius: 8 }}>
+      <H size={13}>Default for new tasks</H>
+      <p style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.5, margin: 0 }}>
+        OpenCode starts with this connection and model in every app. You can still change them for one task.
+      </p>
+      <label style={fieldStyle}>Default connection
+        <select aria-label="Default connection" style={selectStyle} value={defaultId}
+          onChange={(e) => chooseDefaultConnection(e.target.value)}>
+          <option value="">None</option>
+          {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+      {defaultId && <label style={fieldStyle}>Default model
+        <select aria-label="Default model" style={selectStyle} value={defaultModel}
+          onChange={(e) => setDefaultModel(e.target.value)}>
+          {providers.find((p) => p.id === defaultId)?.models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+        </select>
+      </label>}
+      <div><Btn type="submit" disabled={!!busy}>{busy === 'default' ? 'Saving…' : 'Save default'}</Btn></div>
+    </form>}
     {loading && <p role="status">Loading connections…</p>}
     {!loading && providers.length === 0 && editing === null &&
       <div style={{ padding: 16, background: c.panel2, borderRadius: 8, color: c.muted, fontSize: 12.5 }}>
@@ -81,6 +125,7 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
     {providers.map((p) => <div key={p.id} style={{ borderTop: `1px solid ${c.border}`, padding: '14px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <b style={{ fontSize: 13 }}>{p.name}</b>
+        {p.default && <Pill tone="good">Default</Pill>}
         <Pill tone="neutral">{p.protocol === 'openai-completions' ? 'OpenAI-compatible' : 'Anthropic-compatible'}</Pill>
         <span style={{ color: c.muted2, fontSize: 11.5 }}>{p.has_api_key ? 'API key saved' : 'No API key'}</span>
         <Btn sm variant="ghost" style={{ marginLeft: 'auto' }} disabled={!!busy} onClick={() => edit(p)}>Edit</Btn>
@@ -134,7 +179,7 @@ export function ModelProviders({ onError, toast }: { onError: (message: string) 
       </label>}
       <div style={{ display: 'grid', gap: 10 }}>
         <H size={13}>Models</H>
-        <div style={{ fontSize: 11.5, color: c.muted }}>Use the server’s exact model ID or gateway alias. The first model is the connection default.</div>
+        <div style={{ fontSize: 11.5, color: c.muted }}>Use the server’s exact model ID or gateway alias. Pick the one new tasks should start with under Default for new tasks.</div>
         {form.models.map((m, i) => <div key={i} style={{ padding: 12, background: c.panel2, borderRadius: 8 }}>
           <label style={fieldStyle}>Model ID {i + 1}
             <Input required maxLength={200} value={m.id} placeholder="qwen2.5-coder:7b or team/model-alias"

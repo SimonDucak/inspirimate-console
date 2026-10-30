@@ -76,6 +76,44 @@ func (s *Server) v1DeleteModelProvider(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) v1SetModelProviderDefault(w http.ResponseWriter, r *http.Request) {
+	if !s.modelProvidersAvailable(w) {
+		return
+	}
+	var input struct {
+		Model string `json:"model"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		writeV1Err(w, 400, "invalid_request", "expected a JSON object with a model")
+		return
+	}
+	c, err := s.ModelProviders.SetDefault(r.Context(), r.PathValue("id"), input.Model)
+	if errors.Is(err, store.ErrNotFound) {
+		writeV1Err(w, 404, "not_found", "no such model provider connection")
+		return
+	}
+	if err != nil {
+		writeV1Err(w, 400, "invalid_request", err.Error())
+		return
+	}
+	s.auditAction(r, audit.Entry{Action: "model_provider.default", Target: c.ID})
+	writeJSON(w, http.StatusOK, c)
+}
+
+func (s *Server) v1ClearModelProviderDefault(w http.ResponseWriter, r *http.Request) {
+	if !s.modelProvidersAvailable(w) {
+		return
+	}
+	if _, err := s.ModelProviders.SetDefault(r.Context(), "", ""); err != nil {
+		writeV1Err(w, 500, "internal", "could not clear the default model connection")
+		return
+	}
+	s.auditAction(r, audit.Entry{Action: "model_provider.default", Target: ""})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) v1TestModelProvider(w http.ResponseWriter, r *http.Request) {
 	if !s.modelProvidersAvailable(w) {
 		return
