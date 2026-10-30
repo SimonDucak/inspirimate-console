@@ -38,6 +38,7 @@ type task struct {
 	cont      bool // continue the sandbox's most recent agent session
 	env       map[string]string
 	timeout   time.Duration
+	supabase  *runtime.SupabaseGrant
 	dir       string // .runtimed/tasks/<id>
 	createdAt time.Time
 
@@ -77,7 +78,7 @@ func newTask(req runtime.StartTaskRequest, tasksRoot string) (*task, error) {
 		timeout = time.Duration(req.TimeoutS) * time.Second
 	}
 	return &task{
-		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, model: req.Model, provider: req.Provider, cont: cont, env: req.Env,
+		id: req.TaskID, prompt: req.Prompt, agentName: req.Agent, model: req.Model, provider: req.Provider, cont: cont, env: req.Env, supabase: req.Supabase,
 		timeout: timeout, dir: dir, createdAt: time.Now().UTC(),
 		updatedCh: make(chan struct{}), phase: "queued", eventsW: f,
 	}, nil
@@ -114,6 +115,18 @@ func (t *task) emit(evType string, data any) {
 	close(t.updatedCh)
 	t.updatedCh = make(chan struct{})
 	t.mu.Unlock()
+}
+
+// taskPrompt delivers the platform briefing. A continued session already has
+// the briefing, so only the Supabase reminder is repeated.
+func taskPrompt(spec agentSpec) string {
+	if !spec.cont && spec.systemPrompt != "" {
+		return spec.systemPrompt + "\n\n---\n\n# Your task\n\n" + spec.prompt
+	}
+	if spec.cont && spec.supabaseNote != "" {
+		return spec.supabaseNote + "\n\n---\n\n# Your task\n\n" + spec.prompt
+	}
+	return spec.prompt
 }
 
 func (t *task) setPhase(p string) {
@@ -248,12 +261,20 @@ func (a *app) runTask(t *task) {
 	}
 	// Render the platform briefing with THIS sandbox's real values (no hard-coded
 	// loopback address or port) and hand it to the adapter.
+	grant := t.supabase
+	if grant != nil && t.agentName != "" && t.agentName != "opencode" && t.agentName != "claude-code" {
+		grant = nil
+	}
+	note := ""
+	if grant != nil {
+		note = agentprompt.SupabaseSection(grant.ProjectRef, grant.Areas, grant.APIURL, grant.AnonKey)
+	}
 	sysPrompt := agentprompt.Render(agentprompt.Vars{
-		AppDir: a.appDir, Port: a.previewPort, HealthPath: a.webHealthPath,
+		AppDir: a.appDir, Port: a.previewPort, HealthPath: a.webHealthPath, Supabase: note,
 	})
 	finalMsg, usage, agentErr := ag.run(ctx, agentSpec{
 		workDir: a.appDir, stateDir: a.runtimeDir, prompt: t.prompt, model: t.model, provider: t.provider, env: t.env, rawLog: rl,
-		systemPrompt: sysPrompt, cont: t.cont,
+		systemPrompt: sysPrompt, supabaseNote: note, supabase: grant, cont: t.cont,
 	}, t.emit)
 	res.AgentMessageFinal = finalMsg
 	res.Tokens = usage

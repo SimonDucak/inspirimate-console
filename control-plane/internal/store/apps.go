@@ -27,15 +27,20 @@ type App struct {
 	GitBranch       sql.NullString
 	GitCredentialID sql.NullString
 	LastImportAt    sql.NullInt64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// SupabaseConnectionID (0028) points at an owner-scoped supabase_connection.
+	// The token is never stored on the app.
+	SupabaseConnectionID sql.NullString
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // AppPatch carries the fields a PATCH may change; nil means "leave as-is".
+// An empty SupabaseConnectionID clears the link.
 type AppPatch struct {
-	Name        *string
-	Description *string
-	Tags        *[]string
+	Name                 *string
+	Description          *string
+	Tags                 *[]string
+	SupabaseConnectionID *string
 }
 
 func marshalTags(tags []string) string {
@@ -55,7 +60,7 @@ func scanApp(sc scanner) (*App, error) {
 	var created, updated int64
 	err := sc.Scan(&a.ID, &a.OwnerToken, &a.ExternalUserID, &a.ExternalProjectID,
 		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated, &a.RuntimePreset,
-		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt)
+		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &a.SupabaseConnectionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -73,7 +78,7 @@ func scanApp(sc scanner) (*App, error) {
 
 const appSelectCols = `id, owner_token, external_user_id, external_project_id,
 	       name, description, tags, latest_snapshot_id, created_at, updated_at, runtime_preset,
-	       git_repo_url, git_branch, git_credential_id, last_import_at`
+	       git_repo_url, git_branch, git_credential_id, last_import_at, supabase_connection_id`
 
 // SetAppImported stamps last_import_at after a successful Git clone.
 func (s *Store) SetAppImported(ctx context.Context, id string, at int64) error {
@@ -168,6 +173,14 @@ func (s *Store) UpdateApp(ctx context.Context, id, ownerToken string, patch AppP
 		if patch.Tags != nil {
 			sets = append(sets, "tags = ?")
 			args = append(args, marshalTags(*patch.Tags))
+		}
+		if patch.SupabaseConnectionID != nil {
+			sets = append(sets, "supabase_connection_id = ?")
+			if *patch.SupabaseConnectionID == "" {
+				args = append(args, nil)
+			} else {
+				args = append(args, *patch.SupabaseConnectionID)
+			}
 		}
 		// Always bump updated_at; an empty patch is a touch.
 		sets = append(sets, "updated_at = ?")

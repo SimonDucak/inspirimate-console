@@ -127,6 +127,7 @@ function route(method: string, url: string): { status: number; body?: unknown; t
   if (match(u, /\/v1\/agents$/)) return { status: 200, body: { providers: agents } }
   if (match(u, /\/v1\/model-providers$/)) return { status: 200, body: { providers: modelProviders } }
   if (match(u, /\/v1\/git-credentials$/)) return { status: 200, body: { credentials: [{ id: 'gc1', name: 'github', host: 'github.com', username: 'x-access-token', token_set: true, created_at: '2026-07-09T10:00:00Z' }] } }
+  if (match(u, /\/v1\/supabase-connections$/)) return { status: 200, body: { connections: [] } }
   if (match(u, /\/v1\/apps\/[^/]+\/runtime\/manifest$/)) return { status: 200, body: manifest }
   if (match(u, /\/v1\/apps\/[^/]+\/runtime-inspect$/)) return { status: 200, body: { existing_manifest: { present: true }, suggestions: [], default_suggestion: 'react-vite', alternatives: [] } }
   if (match(u, /\/v1\/apps\/[^/]+\/git\/status$/)) return { status: 200, body: gitStatus }

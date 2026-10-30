@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/agentauth"
@@ -16,6 +18,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelconfig"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/supabaseproxy"
 )
 
 // runtimeClientFor builds a runtime.Client for a sandbox's runtimed.
@@ -178,9 +181,15 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	grant, grantStatus, grantMsg := s.supabaseGrant(r, sb, req.TimeoutS)
+	if grantStatus != 0 {
+		writeV1Err(w, grantStatus, "supabase_unavailable", grantMsg)
+		return
+	}
+
 	taskID := newULID()
 	if err := s.runtimeClientFor(id).StartTask(r.Context(), runtime.StartTaskRequest{
-		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, Provider: connection, TimeoutS: req.TimeoutS, Continue: req.Continue,
+		TaskID: taskID, Prompt: req.Prompt, Agent: agent, Model: req.Model, Provider: connection, TimeoutS: req.TimeoutS, Continue: req.Continue, Supabase: grant,
 	}); err != nil {
 		if errors.Is(err, runtime.ErrTaskInProgress) {
 			writeV1Err(w, http.StatusConflict, "task_in_progress", "a task is already in progress")
@@ -390,6 +399,104 @@ func (s *Server) v1TaskEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- POST /v1/sandboxes/{id}/tasks/{taskId}/cancel ------------------
+
+// supabaseGrant loads the project's linked connection and registers a
+// task-scoped proxy grant. A zero status means there is nothing to attach.
+func (s *Server) supabaseGrant(r *http.Request, sb *store.Sandbox, timeoutS int) (*runtime.SupabaseGrant, int, string) {
+	if sb.AppID.String == "" {
+		return nil, 0, ""
+	}
+	app, err := s.Store.GetApp(r.Context(), sb.AppID.String)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, 0, ""
+	}
+	if err != nil {
+		return nil, http.StatusInternalServerError, "could not read the project"
+	}
+	if !app.SupabaseConnectionID.Valid || app.SupabaseConnectionID.String == "" {
+		return nil, 0, ""
+	}
+	if s.Supabase == nil || s.Secrets == nil || s.AgentProxyURL == "" {
+		return nil, http.StatusServiceUnavailable, "supabase proxy is unavailable"
+	}
+	conn, found, err := s.Store.GetSupabaseConnection(r.Context(), app.OwnerToken, app.SupabaseConnectionID.String)
+	if err != nil {
+		return nil, http.StatusInternalServerError, "could not read the supabase connection"
+	}
+	if !found {
+		return nil, http.StatusConflict, "this project's supabase connection no longer exists"
+	}
+	enc, nonce, found, err := s.Store.GetSupabaseConnectionSecret(r.Context(), app.OwnerToken, conn.ID)
+	if err != nil || !found {
+		return nil, http.StatusInternalServerError, "could not read the supabase token"
+	}
+	plain, err := s.Secrets.Open(enc, nonce)
+	if err != nil {
+		return nil, http.StatusInternalServerError, "could not decrypt the supabase token"
+	}
+	keyCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	apiURL, anonKey, keyErr := supabaseproxy.PublicClient(keyCtx, string(plain), conn.ProjectRef)
+	if keyErr != nil {
+		s.loggerFor(r, sb.ID).Warn("supabase publishable key", "err", keyErr.Error())
+	}
+	if apiURL == "" {
+		apiURL = "https://" + conn.ProjectRef + ".supabase.co"
+	}
+	features, areas := supabaseAreas(conn.Features, conn.Management)
+	ttl := runtime.DefaultTaskTimeout
+	if timeoutS > 0 {
+		ttl = time.Duration(timeoutS) * time.Second
+	}
+	key, err := s.Supabase.Put(supabaseproxy.Grant{
+		Token: string(plain), ProjectRef: conn.ProjectRef, Features: features,
+		Auth: containsWord(conn.Management, "auth"), Expires: time.Now().Add(ttl + 2*time.Minute),
+	})
+	if err != nil {
+		return nil, http.StatusInternalServerError, "could not start the supabase proxy"
+	}
+	return &runtime.SupabaseGrant{
+		ProjectRef: conn.ProjectRef,
+		Areas:      areas,
+		MCPBase:    strings.TrimRight(s.AgentProxyURL, "/") + "/supabase/" + key,
+		APIURL:     apiURL,
+		AnonKey:    anonKey,
+		Database:   containsWord(conn.Features, "database"),
+		Docs:       containsWord(conn.Features, "docs"),
+		Storage:    containsWord(conn.Features, "storage") || containsWord(conn.Management, "storage"),
+		Auth:       containsWord(conn.Management, "auth"),
+	}, 0, ""
+}
+
+func supabaseAreas(featuresJSON, managementJSON string) (features, areas []string) {
+	if containsWord(featuresJSON, "database") {
+		features = append(features, "database")
+		areas = append(areas, "database")
+	}
+	if containsWord(featuresJSON, "docs") {
+		features = append(features, "docs")
+		areas = append(areas, "documentation")
+	}
+	if containsWord(featuresJSON, "storage") || containsWord(managementJSON, "storage") {
+		features = append(features, "storage")
+		areas = append(areas, "storage")
+	}
+	if containsWord(managementJSON, "auth") {
+		areas = append(areas, "authentication")
+	}
+	return features, areas
+}
+
+func containsWord(raw, word string) bool {
+	var items []string
+	_ = json.Unmarshal([]byte(raw), &items)
+	for _, item := range items {
+		if item == word {
+			return true
+		}
+	}
+	return false
+}
 
 func (s *Server) v1CancelTask(w http.ResponseWriter, r *http.Request) {
 	id, taskID := r.PathValue("id"), r.PathValue("taskId")

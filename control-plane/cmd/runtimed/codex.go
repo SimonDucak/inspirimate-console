@@ -155,10 +155,7 @@ func (c *codexAgent) run(ctx context.Context, spec agentSpec, emit eventSink) (s
 	}
 	// Codex has no system-prompt flag; deliver the platform briefing as a prompt
 	// preamble on a FRESH run only (on resume it's already in the session).
-	prompt := spec.prompt
-	if spec.systemPrompt != "" && !spec.cont {
-		prompt = spec.systemPrompt + "\n\n---\n\n# Your task\n\n" + spec.prompt
-	}
+	prompt := taskPrompt(spec)
 	args = append(args, prompt)
 
 	cmd := exec.Command("codex", args...)

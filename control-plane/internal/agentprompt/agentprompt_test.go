@@ -24,7 +24,35 @@ func TestRenderIncludesProjectBrain(t *testing.T) {
 		}
 	}
 
-	if strings.Contains(out, "{{APP_DIR}}") {
-		t.Error("unsubstituted {{APP_DIR}} placeholder left in rendered briefing")
+	if strings.Contains(out, "{{APP_DIR}}") || strings.Contains(out, "{{SUPABASE}}") {
+		t.Error("unsubstituted placeholder left in rendered briefing")
+	}
+	if strings.Contains(out, "## Supabase") {
+		t.Error("supabase section must be absent until a project connection is rendered")
+	}
+}
+
+func TestSupabaseSectionNamesOnlyGrantedAreas(t *testing.T) {
+	out := Render(Vars{Supabase: SupabaseSection("abcd1234", []string{"database", "authentication"}, "", "sb_publishable_test")})
+	for _, want := range []string{
+		"## Supabase",
+		"abcd1234",
+		"https://abcd1234.supabase.co",
+		"sb_publishable_test",
+		"Edit the application",
+		"change the Supabase project itself",
+		"enable_google_sign_in",
+		"https://abcd1234.supabase.co/auth/v1/callback",
+		"database, authentication",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(out, "You may change only") || strings.Contains(out, "stop that part") {
+		t.Fatal("the briefing must not tell the agent to stop or avoid the application")
+	}
+	if SupabaseSection("", []string{"database"}, "", "") != "" || SupabaseSection("abcd1234", nil, "", "") != "" {
+		t.Fatal("empty connection must not produce a section")
 	}
 }

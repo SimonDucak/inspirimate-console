@@ -429,7 +429,7 @@ export default function App() {
                 setRoute({ name: 'apps' })
                 loadApps()
               }}
-              goSettings={() => setRoute({ name: 'settings' })}
+              goSettings={(section?: string) => setRoute({ name: 'settings', section })}
               apps={apps}
               onOpenApp={(id, tab) => goApp(id, tab)}
             />

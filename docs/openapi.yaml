@@ -153,6 +153,95 @@ paths:
         "204": { description: Deleted }
         "404": { description: No such credential }
 
+  /v1/supabase-connections:
+    post:
+      operationId: createSupabaseConnection
+      tags: [apps]
+      summary: Store an owner-scoped Supabase connection (token write-only, encrypted at rest). Returns metadata only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, project_ref, features, management, token]
+              properties:
+                name: { type: string }
+                project_ref: { type: string, description: Supabase project ref (8-40 lowercase letters or digits) }
+                features:
+                  type: array
+                  description: MCP groups. At least one of features or management is required.
+                  items: { type: string, enum: [database, docs, storage] }
+                management:
+                  type: array
+                  description: Management API areas the same token may change.
+                  items: { type: string, enum: [auth, storage] }
+                token: { type: string, description: Personal access token (sbp_) — write-only, never returned. Needs permission for every selected area. }
+      responses:
+        "201": { description: Created (metadata only; token never returned) }
+        "400": { description: Invalid request }
+        "409": { description: A connection with that name already exists }
+        "503": { description: Connection store not configured }
+    get:
+      operationId: listSupabaseConnections
+      tags: [apps]
+      summary: List the tenant's Supabase connections (metadata only — no token)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        project_ref: { type: string }
+                        features: { type: array, items: { type: string } }
+                        management: { type: array, items: { type: string } }
+                        token_set: { type: boolean }
+                        created_at: { type: string }
+                        updated_at: { type: string }
+  /v1/supabase-connections/{id}:
+    patch:
+      operationId: updateSupabaseConnection
+      tags: [apps]
+      summary: Update a Supabase connection. Omit or leave token blank to keep the saved token.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, project_ref, features, management]
+              properties:
+                name: { type: string }
+                project_ref: { type: string }
+                features: { type: array, items: { type: string, enum: [database, docs, storage] } }
+                management: { type: array, items: { type: string, enum: [auth, storage] } }
+                token: { type: string, description: Replacement token — write-only. Blank keeps the saved token. }
+      responses:
+        "200": { description: Updated (metadata only; token never returned) }
+        "400": { description: Invalid request }
+        "404": { description: No such connection }
+        "409": { description: A connection with that name already exists }
+    delete:
+      operationId: deleteSupabaseConnection
+      tags: [apps]
+      summary: Delete a Supabase connection (owner-scoped)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: No such connection }
+
   /v1/upgrade:
     get:
       summary: In-place upgrade status
@@ -1710,6 +1799,7 @@ components:
         external_project_id: { type: string }
         runtime_preset: { type: string, description: "Default runtime preset id for new sandboxes." }
         current_sandbox_id: { type: string, description: "Empty when the app has no live sandbox." }
+        supabase_connection_id: { type: string, description: "Saved Supabase connection this project uses. Absent when none is linked." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     Preset:
@@ -1748,6 +1838,7 @@ components:
         name: { type: string }
         description: { type: string }
         tags: { type: array, items: { type: string } }
+        supabase_connection_id: { type: string, description: "Saved Supabase connection id. Empty string removes the link." }
     ConfigItem:
       type: object
       properties:

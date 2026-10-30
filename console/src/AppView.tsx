@@ -2,6 +2,7 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } fr
 import {
   api,
   App as TApp,
+  SupabaseConnection,
   Sandbox,
   Process,
   AppEvent,
@@ -91,6 +92,86 @@ async function ensureAppAgentsMd(
   }
 }
 
+function SupabaseLinkDialog({
+  app,
+  busy,
+  close,
+  save,
+  goSettings,
+}: {
+  app: TApp
+  busy: boolean
+  close: () => void
+  save: (connectionId: string) => void
+  goSettings: (section?: string) => void
+}) {
+  const [connections, setConnections] = useState<SupabaseConnection[]>([])
+  const [chosen, setChosen] = useState(app.supabase_connection_id || '')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api
+      .listSupabaseConnections()
+      .then((rows) => {
+        setConnections(rows)
+        setError('')
+      })
+      .catch((err: Error) => setError(err.message || 'Could not load Supabase connections'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return (
+    <Dialog title="Supabase connection" close={close}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          save(chosen)
+        }}
+      >
+        <p style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.6, marginTop: 0 }}>
+          Choose the saved connection this project uses. The token stays in Settings.
+        </p>
+        {error && (
+          <p role="alert" style={{ color: c.muted, fontSize: 12.5 }}>
+            {error}
+          </p>
+        )}
+        {loading && <p style={{ color: c.muted, fontSize: 12.5 }}>Loading connections…</p>}
+        {!loading && connections.length === 0 && (
+          <p style={{ color: c.muted, fontSize: 12.5 }}>
+            No Supabase connections yet.{' '}
+            <button type="button" className="text-button" onClick={() => goSettings('supabase')}>
+              Add one in Settings
+            </button>
+          </p>
+        )}
+        {connections.length > 0 && (
+          <label className="form-field">
+            Connection
+            <select value={chosen} onChange={(event) => setChosen(event.target.value)}>
+              <option value="">None</option>
+              {connections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.name} · {connection.project_ref}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="dialog-actions">
+          <Btn onClick={close} type="button">
+            Cancel
+          </Btn>
+          <Btn type="submit" variant="primary" disabled={busy || loading || connections.length === 0}>
+            Save
+          </Btn>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
 export function AppView({
   appId,
   initialTab,
@@ -114,7 +195,7 @@ export function AppView({
   onError: (m: string) => void
   toast: (m: string) => void
   goApps: () => void
-  goSettings: () => void
+  goSettings: (section?: string) => void
   apps?: TApp[]
   onOpenApp?: (id: string, tab?: string) => void
 }) {
@@ -131,6 +212,7 @@ export function AppView({
   const [menu, setMenu] = useState(false)
   const [rename, setRename] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [supabaseOpen, setSupabaseOpen] = useState(false)
   const [mobilePane, setMobilePane] = useState(initialBuild ? 'chat' : 'preview')
   const [preparing, setPreparing] = useState(false)
   const selectTab = (t: Tab) => {
@@ -348,6 +430,14 @@ export function AppView({
                 </button>
               )}
               <button
+                onClick={() => {
+                  setSupabaseOpen(true)
+                  setMenu(false)
+                }}
+              >
+                Supabase connection
+              </button>
+              <button
                 className="danger-text"
                 onClick={() => {
                   setDeleting(true)
@@ -541,6 +631,20 @@ export function AppView({
           </div>
         </div>
       </div>
+      {supabaseOpen && (
+        <SupabaseLinkDialog
+          app={app}
+          busy={busy}
+          close={() => !busy && setSupabaseOpen(false)}
+          goSettings={goSettings}
+          save={(connectionId) =>
+            void act(async () => {
+              setApp(await api.updateApp(appId, { supabase_connection_id: connectionId }))
+              setSupabaseOpen(false)
+            }, connectionId ? 'Supabase connection linked' : 'Supabase connection removed')
+          }
+        />
+      )}
       {rename !== null && (
         <Dialog title="Rename project" close={() => !busy && setRename(null)}>
           <form

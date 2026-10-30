@@ -28,6 +28,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/supabaseproxy"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/telemetry"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/upgrade"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/wake"
@@ -188,6 +189,10 @@ type Server struct {
 	// gets this base URL + a dummy key, and the proxy injects the real bearer.
 	// Empty → legacy behaviour (credential mounted into the sandbox).
 	AgentProxyURL string
+
+	// Supabase proxies linked project connections for sandbox agents. Nil when
+	// the agent proxy is not running.
+	Supabase *supabaseproxy.Registry
 }
 
 // agentAuthBaseMount is the in-container parent dir under which each connected
@@ -287,6 +292,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/git-credentials", s.observe("POST /v1/git-credentials", s.v1CreateGitCredential))
 	mux.HandleFunc("GET /v1/git-credentials", s.observe("GET /v1/git-credentials", s.v1ListGitCredentials))
 	mux.HandleFunc("DELETE /v1/git-credentials/{id}", s.observe("DELETE /v1/git-credentials/{id}", s.v1DeleteGitCredential))
+	mux.HandleFunc("POST /v1/supabase-connections", s.observe("POST /v1/supabase-connections", s.v1CreateSupabaseConnection))
+	mux.HandleFunc("GET /v1/supabase-connections", s.observe("GET /v1/supabase-connections", s.v1ListSupabaseConnections))
+	mux.HandleFunc("PATCH /v1/supabase-connections/{id}", s.observe("PATCH /v1/supabase-connections/{id}", s.v1UpdateSupabaseConnection))
+	mux.HandleFunc("DELETE /v1/supabase-connections/{id}", s.observe("DELETE /v1/supabase-connections/{id}", s.v1DeleteSupabaseConnection))
 
 	// Console auth — the control plane is the login authority. status/login/setup
 	// are exempt from the auth middleware (see internal/auth/middleware.go).

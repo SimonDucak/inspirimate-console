@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/audit"
@@ -37,8 +38,9 @@ type v1App struct {
 	ExternalUserID    string    `json:"external_user_id,omitempty"`
 	ExternalProjectID string    `json:"external_project_id,omitempty"`
 	RuntimePreset     string    `json:"runtime_preset,omitempty"`
-	Git               *v1AppGit `json:"git,omitempty"`
-	CurrentSandboxID  string    `json:"current_sandbox_id,omitempty"`
+	Git                  *v1AppGit `json:"git,omitempty"`
+	SupabaseConnectionID string    `json:"supabase_connection_id,omitempty"`
+	CurrentSandboxID     string    `json:"current_sandbox_id,omitempty"`
 	CreatedAt         string    `json:"created_at"`
 	UpdatedAt         string    `json:"updated_at"`
 }
@@ -64,6 +66,9 @@ func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
 	}
 	if a.RuntimePreset.Valid {
 		out.RuntimePreset = a.RuntimePreset.String
+	}
+	if a.SupabaseConnectionID.Valid {
+		out.SupabaseConnectionID = a.SupabaseConnectionID.String
 	}
 	if a.GitRepoURL.Valid && a.GitRepoURL.String != "" {
 		g := &v1AppGit{RepoURL: a.GitRepoURL.String, Branch: a.GitBranch.String}
@@ -220,9 +225,10 @@ func (s *Server) v1GetApp(w http.ResponseWriter, r *http.Request) {
 }
 
 type v1PatchAppReq struct {
-	Name        *string   `json:"name"`
-	Description *string   `json:"description"`
-	Tags        *[]string `json:"tags"`
+	Name                 *string   `json:"name"`
+	Description          *string   `json:"description"`
+	Tags                 *[]string `json:"tags"`
+	SupabaseConnectionID *string   `json:"supabase_connection_id"`
 }
 
 // v1PatchApp — PATCH /v1/apps/{id}.
@@ -237,9 +243,23 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "name cannot be empty")
 		return
 	}
-	err := s.Store.UpdateApp(r.Context(), id, tenantToken(r), store.AppPatch{
-		Name: req.Name, Description: req.Description, Tags: req.Tags,
-	})
+	patch := store.AppPatch{Name: req.Name, Description: req.Description, Tags: req.Tags}
+	if req.SupabaseConnectionID != nil {
+		link := strings.TrimSpace(*req.SupabaseConnectionID)
+		if link != "" {
+			_, found, err := s.Store.GetSupabaseConnection(r.Context(), tenantToken(r), link)
+			if err != nil {
+				writeV1Err(w, http.StatusInternalServerError, "internal", "could not read supabase connection")
+				return
+			}
+			if !found {
+				writeV1Err(w, http.StatusBadRequest, "invalid_request", "no such supabase connection")
+				return
+			}
+		}
+		patch.SupabaseConnectionID = &link
+	}
+	err := s.Store.UpdateApp(r.Context(), id, tenantToken(r), patch)
 	if errors.Is(err, store.ErrNotFound) {
 		writeV1Err(w, http.StatusNotFound, "not_found", "no such app")
 		return

@@ -32,6 +32,11 @@ type agentSpec struct {
 	// adapter delivers it in its own supported way (claude: --append-system-prompt;
 	// opencode/codex: a preamble on the user prompt). Empty = inject nothing.
 	systemPrompt string
+	// supabaseNote is repeated on a continued session, where the full briefing
+	// is already in the transcript. Empty when this project has no connection.
+	supabaseNote string
+	// supabase is the proxy endpoint for this task. Nil when unconnected.
+	supabase *runtime.SupabaseGrant
 	// cont continues the sandbox's most recent agent session instead of starting
 	// fresh (claude --continue, opencode --continue, codex `exec resume --last`).
 	// Each sandbox is one workspace, so "most recent" is naturally per-sandbox.
@@ -362,9 +367,22 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	if cfgErr != nil {
 		return "", usage, fmt.Errorf("configure opencode proxy: %w", cfgErr)
 	}
+	if spec.supabase != nil {
+		prev := cfgPath
+		var mcpErr error
+		cfgPath, mcpErr = withSupabaseMCP(cfgPath, spec.supabase)
+		if mcpErr != nil {
+			if prev != "" {
+				os.Remove(prev)
+			}
+			return "", usage, fmt.Errorf("configure supabase: %w", mcpErr)
+		}
+	}
 	if cfgPath != "" {
 		defer os.Remove(cfgPath)
-		model = proxyModel
+		if proxyModel != "" {
+			model = proxyModel
+		}
 	}
 	args := []string{"run", "--format", "json", "--auto", "--pure"}
 	if spec.workDir != "" {
@@ -379,10 +397,7 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 	// opencode `run` has no system-prompt flag, so deliver the platform briefing
 	// as a clearly-delimited preamble on the prompt — on a FRESH run only (on
 	// --continue it's already in the session).
-	prompt := spec.prompt
-	if spec.systemPrompt != "" && !spec.cont {
-		prompt = spec.systemPrompt + "\n\n---\n\n# Your task\n\n" + spec.prompt
-	}
+	prompt := taskPrompt(spec)
 	args = append(args, "--", prompt)
 	cmd := exec.Command("opencode", args...)
 	cmd.Dir = spec.workDir
@@ -474,4 +489,55 @@ func (o *opencodeAgent) run(ctx context.Context, spec agentSpec, emit eventSink)
 			fmt.Errorf("agent produced no output (opencode exited 0 with zero events)")
 	}
 	return pr.FinalMessage, pr.Usage, nil
+}
+
+// withSupabaseMCP adds the task's Supabase proxy to an OpenCode config. The
+// URL is the control-plane proxy, not the Supabase token.
+func withSupabaseMCP(cfgPath string, g *runtime.SupabaseGrant) (string, error) {
+	if g == nil {
+		return cfgPath, nil
+	}
+	base, err := ipBaseURL(g.MCPBase)
+	if err != nil {
+		return "", err
+	}
+	servers := map[string]any{}
+	if g.Database || g.Docs || g.Storage {
+		servers["supabase"] = map[string]any{"type": "remote", "url": base + "/mcp", "enabled": true}
+	}
+	if g.Auth {
+		servers["supabase-auth"] = map[string]any{"type": "remote", "url": base + "/manage", "enabled": true}
+	}
+	if len(servers) == 0 {
+		return cfgPath, nil
+	}
+	cfg := map[string]any{}
+	if cfgPath != "" {
+		raw, err := os.ReadFile(cfgPath)
+		if err != nil {
+			return "", err
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return "", err
+		}
+	}
+	cfg["mcp"] = servers
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	if cfgPath == "" {
+		f, err := os.CreateTemp("", "opencode-cfg-*.json")
+		if err != nil {
+			return "", err
+		}
+		if _, err := f.Write(raw); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			return "", err
+		}
+		f.Close()
+		return f.Name(), nil
+	}
+	return cfgPath, os.WriteFile(cfgPath, raw, 0o600)
 }

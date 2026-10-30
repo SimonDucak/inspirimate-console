@@ -57,6 +57,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/supabaseproxy"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/telemetry"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/upgrade"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/wake"
@@ -434,9 +435,12 @@ func main() {
 		os.Exit(1)
 	}
 	agentProxyURL := envDefault("SANDBOXD_AGENT_PROXY_URL", "http://sandboxd:9100")
+	var supabaseGrants *supabaseproxy.Registry
 	if proxy := authproxy.New(agentAuth, log.With("component", "authproxy")); proxy != nil && agentProxyURL != "" {
+		supabaseGrants = supabaseproxy.NewRegistry()
 		proxyAddr := envDefault("SANDBOXD_AGENT_PROXY_ADDR", "0.0.0.0:9100")
 		proxyMux := http.NewServeMux()
+		proxyMux.Handle("/supabase/", supabaseGrants.Handler())
 		proxyMux.Handle("/providers/", modelProviders)
 		proxyMux.Handle("/", proxy)
 		go func() {
@@ -546,6 +550,7 @@ func main() {
 		OpencodeZenPath:   envDefault("SANDBOXD_OPENCODE_ZEN_PATH", ""),
 		DefaultAgent:      defaultAgent,
 		AgentProxyURL:     agentProxyURL,
+		Supabase:          supabaseGrants,
 		Docker:            dockerClient,
 		Loopback:          loopMgr,
 		Log:               log.With("component", "api"),

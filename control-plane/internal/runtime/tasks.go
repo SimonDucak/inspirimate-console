@@ -53,6 +53,24 @@ type StartTaskRequest struct {
 	// nil (omitted) = the default, which is to continue when the sandbox already
 	// has a prior session and start fresh otherwise; true/false force the choice.
 	Continue *bool `json:"continue,omitempty"`
+	// Supabase, when set, is the project connection the agent may use. MCPBase is
+	// a control-plane proxy URL. It does not contain the Supabase token.
+	Supabase *SupabaseGrant `json:"supabase,omitempty"`
+}
+
+// SupabaseGrant is the sandbox-facing description of a linked Supabase project.
+// The personal access token stays on the control plane. AnonKey is the public
+// client key the application may embed.
+type SupabaseGrant struct {
+	ProjectRef string   `json:"project_ref"`
+	Areas      []string `json:"areas"`
+	MCPBase    string   `json:"mcp_base"`
+	APIURL     string   `json:"api_url,omitempty"`
+	AnonKey    string   `json:"anon_key,omitempty"`
+	Database   bool     `json:"database"`
+	Docs       bool     `json:"docs"`
+	Storage    bool     `json:"storage"`
+	Auth       bool     `json:"auth"`
 }
 
 // Event is one task progress event. Data is type-specific JSON.

@@ -10,6 +10,7 @@ export interface App {
   runtime_preset?: string
   current_sandbox_id?: string
   git?: { repo_url: string; branch?: string; credential_id?: string }
+  supabase_connection_id?: string
   created_at: string
   updated_at: string
 }
@@ -209,6 +210,18 @@ export interface GitCredential {
   created_at: string
 }
 
+// Supabase connection metadata (GET /v1/supabase-connections). The personal
+// access token is write-only: sent on create or when replacing, never returned.
+export interface SupabaseConnection {
+  id: string
+  name: string
+  project_ref: string
+  features: Array<'database' | 'docs' | 'storage'>
+  management: Array<'auth' | 'storage'>
+  token_set: boolean
+  created_at: string
+}
+
 // API key metadata (GET /v1/api-keys). The plaintext `key` is returned only once
 // at creation (POST /v1/api-keys) and never again.
 export interface ApiKey {
@@ -400,6 +413,23 @@ export const api = {
   createGitCredential: (b: { name: string; host?: string; username?: string; token: string }) =>
     req<GitCredential>('POST', '/v1/git-credentials', b),
   deleteGitCredential: (id: string) => req<unknown>('DELETE', `/v1/git-credentials/${id}`),
+
+  // Supabase connections. The token is write-only: sent on create, and on
+  // update only when replacing the saved token. It is never returned.
+  listSupabaseConnections: () =>
+    req<{ connections: SupabaseConnection[] }>('GET', '/v1/supabase-connections').then((r) => r.connections || []),
+  createSupabaseConnection: (b: {
+    name: string
+    project_ref: string
+    features: string[]
+    management: string[]
+    token: string
+  }) => req<SupabaseConnection>('POST', '/v1/supabase-connections', b),
+  updateSupabaseConnection: (
+    id: string,
+    b: { name: string; project_ref: string; features: string[]; management: string[]; token?: string },
+  ) => req<SupabaseConnection>('PATCH', `/v1/supabase-connections/${id}`, b),
+  deleteSupabaseConnection: (id: string) => req<unknown>('DELETE', `/v1/supabase-connections/${id}`),
   runtimeInspect: (appId: string) => req<RuntimeInspect>('GET', `/v1/apps/${appId}/runtime-inspect`),
   appManifest: (appId: string) => req<AppManifest>('GET', `/v1/apps/${appId}/runtime/manifest`),
   validateManifest: (mfst: string) =>
@@ -484,8 +514,10 @@ export const api = {
   getApp: (id: string) => req<App>('GET', `/v1/apps/${id}`),
   // Partial update (rename / description / tags). Returns the updated app. The
   // server rejects an empty name.
-  updateApp: (id: string, patch: { name?: string; description?: string; tags?: string[] }) =>
-    req<App>('PATCH', `/v1/apps/${id}`, patch),
+  updateApp: (
+    id: string,
+    patch: { name?: string; description?: string; tags?: string[]; supabase_connection_id?: string },
+  ) => req<App>('PATCH', `/v1/apps/${id}`, patch),
   // Full delete: the app AND everything it owns (sandbox container, workspace
   // image, snapshots, and all app rows). Irreversible.
   deleteApp: (id: string) => req<unknown>('DELETE', `/v1/apps/${id}`),

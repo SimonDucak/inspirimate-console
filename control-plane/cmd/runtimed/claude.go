@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -200,6 +201,16 @@ func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSin
 	if spec.systemPrompt != "" {
 		args = append(args, "--append-system-prompt", spec.systemPrompt)
 	}
+	if spec.supabase != nil {
+		mcpFile, err := writeClaudeMCP(spec.supabase)
+		if err != nil {
+			return "", usage, fmt.Errorf("configure supabase: %w", err)
+		}
+		if mcpFile != "" {
+			defer os.Remove(mcpFile)
+			args = append(args, "--mcp-config", mcpFile)
+		}
+	}
 	args = append(args, spec.prompt)
 	cmd := exec.Command("claude", args...)
 	cmd.Dir = spec.workDir
@@ -261,4 +272,36 @@ func (c *claudeCodeAgent) run(ctx context.Context, spec agentSpec, emit eventSin
 			fmt.Errorf("agent produced no output (claude exited with zero events)")
 	}
 	return pr.FinalMessage, pr.Usage, nil
+}
+
+func writeClaudeMCP(g *runtime.SupabaseGrant) (string, error) {
+	base, err := ipBaseURL(g.MCPBase)
+	if err != nil {
+		return "", err
+	}
+	servers := map[string]any{}
+	if g.Database || g.Docs || g.Storage {
+		servers["supabase"] = map[string]any{"type": "http", "url": base + "/mcp"}
+	}
+	if g.Auth {
+		servers["supabase-auth"] = map[string]any{"type": "http", "url": base + "/manage"}
+	}
+	if len(servers) == 0 {
+		return "", nil
+	}
+	raw, err := json.Marshal(map[string]any{"mcpServers": servers})
+	if err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp("", "claude-mcp-*.json")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.Write(raw); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	f.Close()
+	return f.Name(), nil
 }
