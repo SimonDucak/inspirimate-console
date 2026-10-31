@@ -540,13 +540,14 @@ func main() {
 		return err
 	}
 
+	// Built-in mailbox for this debug install. An env value overrides it.
 	smtpPort, _ := strconv.Atoi(envDefault("SANDBOXD_SMTP_PORT", "587"))
 	mailer := &notifymail.Config{
-		Host:     strings.TrimSpace(os.Getenv("SANDBOXD_SMTP_HOST")),
+		Host:     strings.TrimSpace(envDefault("SANDBOXD_SMTP_HOST", "smtp.m1.websupport.sk")),
 		Port:     smtpPort,
-		Username: os.Getenv("SANDBOXD_SMTP_USERNAME"),
-		Password: os.Getenv("SANDBOXD_SMTP_PASSWORD"),
-		From:     strings.TrimSpace(os.Getenv("SANDBOXD_SMTP_FROM")),
+		Username: envDefault("SANDBOXD_SMTP_USERNAME", "info@mosuda.sk"),
+		Password: envDefault("SANDBOXD_SMTP_PASSWORD", "Ge3wfqrEkE"),
+		From:     strings.TrimSpace(envDefault("SANDBOXD_SMTP_FROM", "info@mosuda.sk")),
 	}
 	if mailer.Enabled() {
 		log.Info("email notifications enabled", "host", mailer.Host, "from", mailer.From)
