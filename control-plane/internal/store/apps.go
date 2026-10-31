@@ -30,8 +30,10 @@ type App struct {
 	// SupabaseConnectionID (0028) points at an owner-scoped supabase_connection.
 	// The token is never stored on the app.
 	SupabaseConnectionID sql.NullString
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	// NotifyEmails (0030) are plain addresses emailed when a coding agent finishes.
+	NotifyEmails []string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // AppPatch carries the fields a PATCH may change; nil means "leave as-is".
@@ -41,6 +43,7 @@ type AppPatch struct {
 	Description          *string
 	Tags                 *[]string
 	SupabaseConnectionID *string
+	NotifyEmails         *[]string
 }
 
 func marshalTags(tags []string) string {
@@ -58,9 +61,10 @@ func scanApp(sc scanner) (*App, error) {
 	a := &App{}
 	var tags string
 	var created, updated int64
+	var emails string
 	err := sc.Scan(&a.ID, &a.OwnerToken, &a.ExternalUserID, &a.ExternalProjectID,
 		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated, &a.RuntimePreset,
-		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &a.SupabaseConnectionID)
+		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &a.SupabaseConnectionID, &emails)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -71,6 +75,10 @@ func scanApp(sc scanner) (*App, error) {
 	if a.Tags == nil {
 		a.Tags = []string{}
 	}
+	_ = json.Unmarshal([]byte(emails), &a.NotifyEmails)
+	if a.NotifyEmails == nil {
+		a.NotifyEmails = []string{}
+	}
 	a.CreatedAt = time.Unix(created, 0).UTC()
 	a.UpdatedAt = time.Unix(updated, 0).UTC()
 	return a, nil
@@ -78,7 +86,8 @@ func scanApp(sc scanner) (*App, error) {
 
 const appSelectCols = `id, owner_token, external_user_id, external_project_id,
 	       name, description, tags, latest_snapshot_id, created_at, updated_at, runtime_preset,
-	       git_repo_url, git_branch, git_credential_id, last_import_at, supabase_connection_id`
+	       git_repo_url, git_branch, git_credential_id, last_import_at, supabase_connection_id,
+	       notify_emails`
 
 // SetAppImported stamps last_import_at after a successful Git clone.
 func (s *Store) SetAppImported(ctx context.Context, id string, at int64) error {
@@ -181,6 +190,10 @@ func (s *Store) UpdateApp(ctx context.Context, id, ownerToken string, patch AppP
 			} else {
 				args = append(args, *patch.SupabaseConnectionID)
 			}
+		}
+		if patch.NotifyEmails != nil {
+			sets = append(sets, "notify_emails = ?")
+			args = append(args, marshalTags(*patch.NotifyEmails))
 		}
 		// Always bump updated_at; an empty patch is a touch.
 		sets = append(sets, "updated_at = ?")

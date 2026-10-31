@@ -25,6 +25,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/loopback"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelprovider"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/notifymail"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/secrets"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/snapshot"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
@@ -38,14 +39,20 @@ import (
 type Server struct {
 	ModelProviders *modelprovider.Service
 	Store          *store.Store
-	Docker         *docker.Client
+	// Mail sends a notice when a coding agent finishes. Nil or unconfigured
+	// means no mail is sent. The password never leaves this process.
+	Mail   *notifymail.Config
+	Docker *docker.Client
 	// Upgrade runs in-place upgrades via a detached upgrader container
 	// (POST /v1/upgrade). nil = feature unavailable (returns 409 with CLI hint).
 	Upgrade       *upgrade.Manager
 	Loopback      *loopback.Manager
 	Log           *slog.Logger
 	PreviewDomain string
-	Image         string
+	// ConsoleHost overrides the console hostname in notification links.
+	// Empty uses console.<preview domain>.
+	ConsoleHost string
+	Image       string
 
 	// OSS docker-native knobs (see cmd/sandboxd/main.go for env wiring):
 	//   Network           — shared docker network sandboxes join so Traefik

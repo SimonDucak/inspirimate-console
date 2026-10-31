@@ -50,6 +50,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/metrics"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/modelprovider"
 	nginxwatch "github.com/tastyeffectco/sandboxd/control-plane/internal/nginx"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/notifymail"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/previewhost"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/reaper"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/reconcile"
@@ -539,8 +540,21 @@ func main() {
 		return err
 	}
 
+	smtpPort, _ := strconv.Atoi(envDefault("SANDBOXD_SMTP_PORT", "587"))
+	mailer := &notifymail.Config{
+		Host:     strings.TrimSpace(os.Getenv("SANDBOXD_SMTP_HOST")),
+		Port:     smtpPort,
+		Username: os.Getenv("SANDBOXD_SMTP_USERNAME"),
+		Password: os.Getenv("SANDBOXD_SMTP_PASSWORD"),
+		From:     strings.TrimSpace(os.Getenv("SANDBOXD_SMTP_FROM")),
+	}
+	if mailer.Enabled() {
+		log.Info("email notifications enabled", "host", mailer.Host, "from", mailer.From)
+	}
+
 	server := &api.Server{
 		Store:             st,
+		Mail:              mailer,
 		Secrets:           secretsCipher,
 		ModelProviders:    modelProviders,
 		Update:            updateChecker,
@@ -555,6 +569,7 @@ func main() {
 		Loopback:          loopMgr,
 		Log:               log.With("component", "api"),
 		PreviewDomain:     domain,
+		ConsoleHost:       strings.TrimSpace(os.Getenv("CONSOLE_HOST")),
 		PreviewHostStyle:  hosts.Style,
 		PreviewHostTag:    hosts.Tag,
 		Image:             image,

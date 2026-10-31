@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/notifymail"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 )
 
@@ -74,8 +75,9 @@ func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration)
 		}
 		if attempt >= taskWatchAttempts {
 			log.Warn("task watcher: cannot reach runtimed; marking failed", "err", err.Error())
-			s.finishWatchedTask(sandboxID, taskID, failedResult(taskID, "sandbox_unavailable",
-				"task watcher could not reach runtimed"))
+			result := failedResult(taskID, "sandbox_unavailable", "task watcher could not reach runtimed")
+			s.finishWatchedTask(sandboxID, taskID, result)
+			s.notifyTaskDone(sandboxID, taskID, result)
 			return
 		}
 		select {
@@ -99,13 +101,62 @@ func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration)
 	})
 	if result == nil {
 		log.Warn("task watcher: event stream ended without a terminal event")
-		s.finishWatchedTask(sandboxID, taskID, failedResult(taskID, "internal",
-			"task event stream ended without a terminal event"))
+		result = failedResult(taskID, "internal", "task event stream ended without a terminal event")
+		s.finishWatchedTask(sandboxID, taskID, result)
+		s.notifyTaskDone(sandboxID, taskID, result)
 		return
 	}
 	s.finishWatchedTask(sandboxID, taskID, result)
+	s.notifyTaskDone(sandboxID, taskID, result)
 	log.Info("task watcher: result persisted", "status", result.Status)
 
+}
+
+// notifyTaskDone emails the project's saved addresses after a live task ends.
+// Restart reconciliation does not call this, so an upgrade does not resend old results.
+func (s *Server) notifyTaskDone(sandboxID, taskID string, result *runtime.TaskResult) {
+	if s.Mail == nil || !s.Mail.Enabled() || result == nil {
+		return
+	}
+	if result.Status != runtime.TaskSucceeded && result.Status != runtime.TaskFailed {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		sb, err := s.Store.Get(ctx, sandboxID)
+		if err != nil || !sb.AppID.Valid {
+			return
+		}
+		app, err := s.Store.GetApp(ctx, sb.AppID.String)
+		if err != nil || len(app.NotifyEmails) == 0 {
+			return
+		}
+		prompt := ""
+		if task, err := s.Store.GetTask(ctx, taskID); err == nil {
+			prompt = task.Prompt
+		}
+		subject, body := notifymail.TaskNotice(app.Name, string(result.Status), prompt, s.consoleAppURL(app.ID))
+		if err := s.Mail.Send(ctx, app.NotifyEmails, subject, body); err != nil && s.Log != nil {
+			s.Log.Warn("task email failed", "task", taskID, "err", err.Error())
+		}
+	}()
+}
+
+func (s *Server) consoleAppURL(appID string) string {
+	if s.PreviewDomain == "" && s.ConsoleHost == "" {
+		return ""
+	}
+	scheme, defaultPort := s.previewScheme()
+	host := s.ConsoleHost
+	if host == "" {
+		host = s.hosts().Console()
+	}
+	port := ""
+	if s.PublicHTTPPort != "" && s.PublicHTTPPort != defaultPort {
+		port = ":" + s.PublicHTTPPort
+	}
+	return scheme + "://" + host + port + "/#/app/" + appID
 }
 
 func (s *Server) finishWatchedTask(sandboxID, taskID string, result *runtime.TaskResult) {

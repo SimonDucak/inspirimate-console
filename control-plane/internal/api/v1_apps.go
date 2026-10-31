@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"os"
 	"strings"
 	"time"
@@ -31,18 +32,19 @@ type v1AppGit struct {
 }
 
 type v1App struct {
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	Description       string    `json:"description"`
-	Tags              []string  `json:"tags"`
-	ExternalUserID    string    `json:"external_user_id,omitempty"`
-	ExternalProjectID string    `json:"external_project_id,omitempty"`
-	RuntimePreset     string    `json:"runtime_preset,omitempty"`
+	ID                   string    `json:"id"`
+	Name                 string    `json:"name"`
+	Description          string    `json:"description"`
+	Tags                 []string  `json:"tags"`
+	ExternalUserID       string    `json:"external_user_id,omitempty"`
+	ExternalProjectID    string    `json:"external_project_id,omitempty"`
+	RuntimePreset        string    `json:"runtime_preset,omitempty"`
 	Git                  *v1AppGit `json:"git,omitempty"`
 	SupabaseConnectionID string    `json:"supabase_connection_id,omitempty"`
+	NotifyEmails         []string  `json:"notify_emails"`
 	CurrentSandboxID     string    `json:"current_sandbox_id,omitempty"`
-	CreatedAt         string    `json:"created_at"`
-	UpdatedAt         string    `json:"updated_at"`
+	CreatedAt            string    `json:"created_at"`
+	UpdatedAt            string    `json:"updated_at"`
 }
 
 func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
@@ -51,12 +53,16 @@ func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
 		Name:             a.Name,
 		Description:      a.Description,
 		Tags:             a.Tags,
+		NotifyEmails:     a.NotifyEmails,
 		CurrentSandboxID: currentSandboxID,
 		CreatedAt:        a.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:        a.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if out.Tags == nil {
 		out.Tags = []string{}
+	}
+	if out.NotifyEmails == nil {
+		out.NotifyEmails = []string{}
 	}
 	if a.ExternalUserID.Valid {
 		out.ExternalUserID = a.ExternalUserID.String
@@ -229,6 +235,7 @@ type v1PatchAppReq struct {
 	Description          *string   `json:"description"`
 	Tags                 *[]string `json:"tags"`
 	SupabaseConnectionID *string   `json:"supabase_connection_id"`
+	NotifyEmails         *[]string `json:"notify_emails"`
 }
 
 // v1PatchApp — PATCH /v1/apps/{id}.
@@ -259,6 +266,14 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 		}
 		patch.SupabaseConnectionID = &link
 	}
+	if req.NotifyEmails != nil {
+		emails, err := normalizeNotifyEmails(*req.NotifyEmails)
+		if err != nil {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		patch.NotifyEmails = &emails
+	}
 	err := s.Store.UpdateApp(r.Context(), id, tenantToken(r), patch)
 	if errors.Is(err, store.ErrNotFound) {
 		writeV1Err(w, http.StatusNotFound, "not_found", "no such app")
@@ -277,6 +292,32 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 	s.recordEvent(r, events.Event{Type: events.AppUpdated, Severity: events.SeverityInfo,
 		Message: "App updated", AppID: id})
 	writeJSON(w, http.StatusOK, v1AppFromRow(app, s.currentSandboxID(r, id)))
+}
+
+const maxNotifyEmails = 20
+
+func normalizeNotifyEmails(in []string) ([]string, error) {
+	if len(in) > maxNotifyEmails {
+		return nil, fmt.Errorf("at most %d email addresses", maxNotifyEmails)
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		addr := strings.ToLower(strings.TrimSpace(raw))
+		if addr == "" {
+			continue
+		}
+		parsed, err := mail.ParseAddress(addr)
+		if err != nil || parsed.Address != addr || len(addr) > 254 {
+			return nil, errors.New("invalid email address")
+		}
+		if seen[addr] {
+			continue
+		}
+		seen[addr] = true
+		out = append(out, addr)
+	}
+	return out, nil
 }
 
 // v1DeleteApp — DELETE /v1/apps/{id}. The FULL teardown: purge every sandbox the

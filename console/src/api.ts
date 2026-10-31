@@ -11,6 +11,7 @@ export interface App {
   current_sandbox_id?: string
   git?: { repo_url: string; branch?: string; credential_id?: string }
   supabase_connection_id?: string
+  notify_emails?: string[]
   created_at: string
   updated_at: string
 }
@@ -521,7 +522,7 @@ export const api = {
   // server rejects an empty name.
   updateApp: (
     id: string,
-    patch: { name?: string; description?: string; tags?: string[]; supabase_connection_id?: string },
+    patch: { name?: string; description?: string; tags?: string[]; supabase_connection_id?: string; notify_emails?: string[] },
   ) => req<App>('PATCH', `/v1/apps/${id}`, patch),
   // Full delete: the app AND everything it owns (sandbox container, workspace
   // image, snapshots, and all app rows). Irreversible.

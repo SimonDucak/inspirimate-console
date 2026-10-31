@@ -1830,6 +1830,7 @@ components:
         runtime_preset: { type: string, description: "Default runtime preset id for new sandboxes." }
         current_sandbox_id: { type: string, description: "Empty when the app has no live sandbox." }
         supabase_connection_id: { type: string, description: "Saved Supabase connection this project uses. Absent when none is linked." }
+        notify_emails: { type: array, items: { type: string, format: email }, description: "Addresses emailed when the coding agent finishes. Empty when none are set." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     Preset:
@@ -1869,6 +1870,7 @@ components:
         description: { type: string }
         tags: { type: array, items: { type: string } }
         supabase_connection_id: { type: string, description: "Saved Supabase connection id. Empty string removes the link." }
+        notify_emails: { type: array, items: { type: string, format: email }, description: "Replace the addresses emailed when the coding agent finishes. An empty array turns notifications off." }
     ConfigItem:
       type: object
       properties:

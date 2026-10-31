@@ -125,6 +125,12 @@ services:
       # explicit rollback (it trips the "your API is open" warning).
       SANDBOXD_API_AUTH_DISABLED: ${SANDBOXD_API_AUTH_DISABLED:-false}
       SANDBOXD_API_TOKENS: ${SANDBOXD_API_TOKENS:-}
+      # Email when a coding agent finishes. The password stays in .env.
+      SANDBOXD_SMTP_HOST: ${SANDBOXD_SMTP_HOST:-}
+      SANDBOXD_SMTP_PORT: ${SANDBOXD_SMTP_PORT:-587}
+      SANDBOXD_SMTP_USERNAME: ${SANDBOXD_SMTP_USERNAME:-}
+      SANDBOXD_SMTP_PASSWORD: ${SANDBOXD_SMTP_PASSWORD:-}
+      SANDBOXD_SMTP_FROM: ${SANDBOXD_SMTP_FROM:-}
       # --- idle lifecycle (override if you like) ---
       SANDBOXD_IDLE_THRESHOLD_SECONDS: ${SANDBOXD_IDLE_THRESHOLD_SECONDS:-2100}
     networks:

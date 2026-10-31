@@ -21,6 +21,7 @@ import { VersionsPanel } from './VersionsPanel'
 import { SecretsPanel } from './SecretsPanel'
 import { DeployModal } from './DeployModal'
 import { slugKey, splitInline } from './brain'
+import { fitPreviewScale, previewPhone, previewPhones, type PreviewPhoneId } from './previewDevices'
 
 // Code-split the CodeMirror editor: it's the app's heaviest dependency and only
 // needed on the Files tab, so it loads on demand rather than in the main bundle.
@@ -213,6 +214,8 @@ export function AppView({
   const [rename, setRename] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [supabaseOpen, setSupabaseOpen] = useState(false)
+  const [notifyOpen, setNotifyOpen] = useState(false)
+  const [notifyDraft, setNotifyDraft] = useState('')
   const [mobilePane, setMobilePane] = useState(initialBuild ? 'chat' : 'preview')
   const [preparing, setPreparing] = useState(false)
   const selectTab = (t: Tab) => {
@@ -438,6 +441,15 @@ export function AppView({
                 Supabase connection
               </button>
               <button
+                onClick={() => {
+                  setNotifyDraft((app.notify_emails || []).join('\n'))
+                  setNotifyOpen(true)
+                  setMenu(false)
+                }}
+              >
+                Email notifications
+              </button>
+              <button
                 className="danger-text"
                 onClick={() => {
                   setDeleting(true)
@@ -645,6 +657,46 @@ export function AppView({
           }
         />
       )}
+      {notifyOpen && (
+        <Dialog title="Email notifications" close={() => !busy && setNotifyOpen(false)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const emails = notifyDraft
+                .split(/[\s,;]+/)
+                .map((address) => address.trim())
+                .filter(Boolean)
+              void act(async () => {
+                setApp(await api.updateApp(appId, { notify_emails: emails }))
+                setNotifyOpen(false)
+              }, emails.length ? 'Notification addresses saved' : 'Email notifications turned off')
+            }}
+          >
+            <p className="field-help">
+              These addresses are emailed when the coding agent finishes. One address per line.
+            </p>
+            <label className="form-field">
+              Email addresses
+              <textarea
+                aria-label="Notification addresses"
+                rows={5}
+                value={notifyDraft}
+                onChange={(e) => setNotifyDraft(e.target.value)}
+                placeholder={'name@example.com\nteam@example.com'}
+                style={{ width: '100%', boxSizing: 'border-box', font: 'inherit' }}
+              />
+            </label>
+            <div className="dialog-actions">
+              <Btn onClick={() => setNotifyOpen(false)} type="button">
+                Cancel
+              </Btn>
+              <Btn type="submit" variant="primary" disabled={busy}>
+                Save addresses
+              </Btn>
+            </div>
+          </form>
+        </Dialog>
+      )}
       {rename !== null && (
         <Dialog title="Rename project" close={() => !busy && setRename(null)}>
           <form
@@ -710,9 +762,12 @@ export function AppView({
 }
 
 function PreviewPane({ sb }: { sb: Sandbox | null }) {
-  const [size, setSize] = useState<'desktop' | 'mobile'>('desktop')
+  const [device, setDevice] = useState<'desktop' | PreviewPhoneId>('desktop')
   const [nonce, setNonce] = useState(0)
   const [blocked, setBlocked] = useState(false)
+  const [scale, setScale] = useState(1)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const phone = device === 'desktop' ? undefined : previewPhone(device)
   const url = sb?.preview?.url
   const ready = sb?.status === 'running' && sb?.preview?.status === 'ready' && !!url
   useEffect(() => {
@@ -732,6 +787,60 @@ function PreviewPane({ sb }: { sb: Sandbox | null }) {
       controller.abort()
     }
   }, [url, ready, nonce])
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!phone || !canvas) return
+    const fit = () => {
+      const pad = 32
+      setScale(fitPreviewScale(canvas.clientWidth - pad, canvas.clientHeight - pad, phone.width, phone.height))
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [phone])
+  const frame = ready && !blocked ? (
+    <iframe key={`${url}-${nonce}`} title="App preview" src={url} data-testid="preview" />
+  ) : (
+    <div
+      className="preview-placeholder"
+      data-testid={blocked ? 'preview-blocked' : sb?.status === 'running' ? 'preview-starting' : 'preview-empty'}
+    >
+      <span className="preview-placeholder-icon">
+        <Icon name={blocked ? 'external' : 'monitor'} size={32} />
+      </span>
+      <h2>
+        {blocked
+          ? 'Open your app in a new tab'
+          : !sb
+            ? 'Your canvas is waiting'
+            : sb.status !== 'running'
+              ? 'Your workspace is resting'
+              : sb.preview?.status === 'none'
+                ? 'Running behind the scenes'
+                : 'Bringing your app to life'}
+      </h2>
+      <p>
+        {blocked
+          ? 'The app is running, but this browser could not reach the inline preview.'
+          : !sb
+            ? 'Create a workspace, then tell your agent what you want to build.'
+            : sb.status !== 'running'
+              ? 'Start the workspace to continue where you left off.'
+              : sb.preview?.status === 'none'
+                ? 'This project has no web preview. Check its processes in Runtime.'
+                : 'The preview appears here as soon as your app is ready.'}
+      </p>
+      {blocked && (
+        <Btn
+          onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+          data-testid="preview-open-newtab"
+        >
+          Open app ↗
+        </Btn>
+      )}
+    </div>
+  )
   return (
     <div className="preview-pane">
       <div className="preview-toolbar">
@@ -750,20 +859,35 @@ function PreviewPane({ sb }: { sb: Sandbox | null }) {
         </span>
         <div className="viewport-switch">
           <button
-            className={size === 'desktop' ? 'active' : ''}
+            className={device === 'desktop' ? 'active' : ''}
             aria-label="Desktop preview"
-            onClick={() => setSize('desktop')}
+            onClick={() => setDevice('desktop')}
           >
             <Icon name="monitor" size={16} />
           </button>
           <button
-            className={size === 'mobile' ? 'active' : ''}
+            className={phone ? 'active' : ''}
             aria-label="Mobile preview"
-            onClick={() => setSize('mobile')}
+            onClick={() => setDevice((current) => (current === 'desktop' ? 'iphone-16' : current))}
           >
             <Icon name="phone" size={16} />
           </button>
         </div>
+        {phone && (
+          <select
+            className="phone-picker"
+            aria-label="Phone size"
+            data-testid="phone-size"
+            value={phone.id}
+            onChange={(event) => setDevice(event.target.value as PreviewPhoneId)}
+          >
+            {previewPhones.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label} · {item.width}×{item.height}
+              </option>
+            ))}
+          </select>
+        )}
         {url && (
           <a
             className="icon-button"
@@ -776,50 +900,19 @@ function PreviewPane({ sb }: { sb: Sandbox | null }) {
           </a>
         )}
       </div>
-      <div className={`preview-canvas preview-${size}`}>
-        {ready && !blocked ? (
-          <iframe key={`${url}-${nonce}`} title="App preview" src={url} data-testid="preview" />
-        ) : (
-          <div
-            className="preview-placeholder"
-            data-testid={
-              blocked ? 'preview-blocked' : sb?.status === 'running' ? 'preview-starting' : 'preview-empty'
-            }
-          >
-            <span className="preview-placeholder-icon">
-              <Icon name={blocked ? 'external' : 'monitor'} size={32} />
-            </span>
-            <h2>
-              {blocked
-                ? 'Open your app in a new tab'
-                : !sb
-                  ? 'Your canvas is waiting'
-                  : sb.status !== 'running'
-                    ? 'Your workspace is resting'
-                    : sb.preview?.status === 'none'
-                      ? 'Running behind the scenes'
-                      : 'Bringing your app to life'}
-            </h2>
-            <p>
-              {blocked
-                ? 'The app is running, but this browser could not reach the inline preview.'
-                : !sb
-                  ? 'Create a workspace, then tell your agent what you want to build.'
-                  : sb.status !== 'running'
-                    ? 'Start the workspace to continue where you left off.'
-                    : sb.preview?.status === 'none'
-                      ? 'This project has no web preview. Check its processes in Runtime.'
-                      : 'The preview appears here as soon as your app is ready.'}
-            </p>
-            {blocked && (
-              <Btn
-                onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
-                data-testid="preview-open-newtab"
-              >
-                Open app ↗
-              </Btn>
-            )}
+      <div className="preview-canvas" ref={canvasRef}>
+        {phone ? (
+          <div className="preview-phone-slot" style={{ width: phone.width * scale, height: phone.height * scale }}>
+            <div
+              className="preview-phone"
+              data-testid="phone-frame"
+              style={{ width: phone.width, height: phone.height, transform: `scale(${scale})` }}
+            >
+              {frame}
+            </div>
           </div>
+        ) : (
+          frame
         )}
       </div>
     </div>
