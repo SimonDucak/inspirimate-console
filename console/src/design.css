@@ -1510,11 +1510,62 @@ hr {
   border: 1px solid var(--border);
   padding: 12px 14px;
   border-radius: 12px 12px 3px 12px;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.7;
   margin-left: 16px;
+}
+.user-message-text {
+  white-space: pre-wrap;
+}
+.chat-files,
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chat-files {
+  margin-bottom: 8px;
+}
+.chat-files li,
+.chat-attachments li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.3;
+  background: #10140e;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.chat-attachments {
+  padding: 10px 13px 0;
+}
+.chat-attachments button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 0;
+}
+.attach-button {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.attach-button:disabled {
+  opacity: 0.4;
 }
 .agent-message {
   font-size: 12px;

@@ -23,6 +23,7 @@ const paths = {
   check: 'm5 12 4 4L19 6',
   logout: 'M9 3H3v18h6 M10 12h11 m-5-5 5 5-5 5',
   refresh: 'M20 7a9 9 0 1 0 1 8 M20 2v6h-6',
+  paperclip: 'M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48',
 }
 export type IconName = keyof typeof paths
 export function Icon({ name, size = 18, style }: { name: IconName; size?: number; style?: CSSProperties }) {

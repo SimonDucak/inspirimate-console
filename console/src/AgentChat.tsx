@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, Agent, ModelProvider, Sandbox, TaskSummary } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice, preferredModel, withPreferred } from './AgentPicker'
+import { maxChatFileBytes, maxChatFiles, promptWithAttachments, splitAttachedPrompt, uploadPaths } from './chatAttachments'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { AgentMessage } from './AgentMessage'
@@ -36,6 +37,8 @@ export function AgentChat({
   const [agents, setAgents] = useState<Agent[]>([])
   const [loaded, setLoaded] = useState(false)
   const [text, setText] = useState(initialBuild?.prompt || draft?.prompt || '')
+  const [files, setFiles] = useState<File[]>([])
+  const fileInput = useRef<HTMLInputElement>(null)
   const [history, setHistory] = useState<TaskSummary[]>([])
   const [active, setActive] = useState<TaskSummary | null>(null)
   const [response, setResponse] = useState('')
@@ -62,6 +65,7 @@ export function AgentChat({
     setResponse('')
     setResolved('')
     setTool('')
+    setFiles([])
   }, [sbID])
   const sandboxRunning = sb?.status === 'running' && ready
   const blocked = choiceBlocked(choice, providers, agents)
@@ -151,33 +155,66 @@ export function AgentChat({
   useEffect(() => {
     scroll.current?.scrollTo?.({ top: scroll.current.scrollHeight, behavior: 'smooth' })
   }, [response, history.length, active?.id])
+  const addFiles = (list: FileList | null) => {
+    if (!list?.length) return
+    const next = [...files]
+    let problem = ''
+    for (const file of Array.from(list)) {
+      if (next.length >= maxChatFiles) {
+        problem = 'You can attach up to 2 files.'
+        break
+      }
+      if (file.size > maxChatFileBytes) {
+        problem = `${file.name} is larger than 25 MB.`
+        continue
+      }
+      if (file.size === 0) {
+        problem = `${file.name} is empty.`
+        continue
+      }
+      next.push(file)
+    }
+    setFiles(next)
+    setError(problem)
+    if (fileInput.current) fileInput.current.value = ''
+  }
   const send = async (auto = false) => {
     if (!sbID || !sandboxRunning || !text.trim() || active || blocked || !loaded || submitting.current) return
     submitting.current = true
     const prompt = text.trim()
+    const attached = files
     if (auto) {
       initialSent.current = true
       consumeBuild?.()
     }
     setError('')
     setText('')
+    setFiles([])
     setResponse('')
-    setActive({ id: '', prompt, status: 'starting', can_revert: false })
     const selected = providers.find((provider) => provider.id === choice.provider)
     const model = choice.model || (selected ? preferredModel(selected) : '')
     try {
+      const paths = uploadPaths(attached.map((file) => file.name))
+      for (let i = 0; i < attached.length; i++) {
+        const content = await attached[i].text()
+        if (content.includes('\0')) throw new Error(`${attached[i].name} is not a text file. Attach a CSV or another text file.`)
+        await api.putWorkspaceFile(sbID, paths[i], content)
+      }
+      const taskPrompt = promptWithAttachments(prompt, paths)
+      setActive({ id: '', prompt: taskPrompt, status: 'starting', can_revert: false })
       const task = await api.submitTask(
         sbID,
-        prompt,
+        taskPrompt,
         choice.agent,
         model || undefined,
         auto ? false : cont,
         choice.provider || undefined,
       )
-      setActive({ id: task.id, prompt, status: 'running', can_revert: false })
+      setActive({ id: task.id, prompt: taskPrompt, status: 'running', can_revert: false })
       void loadHistory()
     } catch (e) {
       setText(prompt)
+      setFiles(attached)
       setActive(null)
       setError((e as Error).message)
     } finally {
@@ -264,7 +301,7 @@ export function AgentChat({
             </span>
             <h3>Let’s make it yours.</h3>
             <p>
-              Describe what to build or change. Your agent can edit files, install packages and run your app.
+              Describe what to build or change. Attach up to two files, such as a CSV to seed a table. Your agent can edit files, install packages and run your app.
             </p>
             <div className="chat-suggestions">
               {[
@@ -284,7 +321,7 @@ export function AgentChat({
           .filter((t) => terminal(t.status))
           .map((t) => (
             <article className="chat-turn" key={t.id}>
-              {t.prompt && <div className="user-message">{t.prompt}</div>}
+              {t.prompt && <UserPrompt prompt={t.prompt} />}
               <div className="agent-message">
                 <span className="message-label">
                   <Icon name="spark" size={13} />
@@ -320,7 +357,7 @@ export function AgentChat({
           ))}
         {active && (
           <article className="chat-turn">
-            <div className="user-message">{active.prompt || 'Task in progress'}</div>
+            <UserPrompt prompt={active.prompt || 'Task in progress'} />
             <div className="agent-message">
               <span className="message-label">
                 <Icon name="spark" size={13} />
@@ -372,6 +409,30 @@ export function AgentChat({
           void send()
         }}
       >
+        {files.length > 0 && (
+          <ul className="chat-attachments">
+            {files.map((file, index) => (
+              <li key={`${file.name}-${index}`}>
+                <span>{file.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => setFiles(files.filter((_, i) => i !== index))}
+                >
+                  <Icon name="close" size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          data-testid="task-file"
+          onChange={(e) => addFiles(e.target.files)}
+        />
         <textarea
           aria-label="Message the agent"
           value={text}
@@ -387,7 +448,17 @@ export function AgentChat({
           data-testid="task-prompt"
         />
         <footer>
-          <span>Enter to send · Shift + Enter for a new line</span>
+          <button
+            type="button"
+            className="attach-button"
+            aria-label="Attach a file"
+            data-testid="task-attach"
+            disabled={!!active || files.length >= maxChatFiles}
+            onClick={() => fileInput.current?.click()}
+          >
+            <Icon name="paperclip" size={16} />
+          </button>
+          <span>Up to 2 files · Enter to send</span>
           {active ? (
             <Btn disabled={!active.id} onClick={() => void cancel()} type="button">
               Stop
@@ -422,5 +493,21 @@ export function AgentChat({
         </Dialog>
       )}
     </section>
+  )
+}
+
+function UserPrompt({ prompt }: { prompt: string }) {
+  const shown = splitAttachedPrompt(prompt)
+  return (
+    <div className="user-message">
+      {shown.files.length > 0 && (
+        <ul className="chat-files">
+          {shown.files.map((file) => (
+            <li key={file}>{file.replace(/^uploads\//, '')}</li>
+          ))}
+        </ul>
+      )}
+      <span className="user-message-text">{shown.text}</span>
+    </div>
   )
 }
