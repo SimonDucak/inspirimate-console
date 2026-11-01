@@ -41,6 +41,14 @@ const TABS = [
 ] as const
 type Tab = (typeof TABS)[number]
 
+const defaultTaskTimeoutMinutes = 10
+const maxTaskTimeoutMinutes = 1440
+
+function taskTimeoutMinutes(seconds?: number) {
+  if (!seconds || seconds <= 0) return defaultTaskTimeoutMinutes
+  return Math.max(1, Math.round(seconds / 60))
+}
+
 // Per-app agent context (Layer 2). Platform/sandbox conventions come from the
 // agent's system prompt (Settings → Agent system prompt); this file is only the
 // APP-specific briefing: detected stack, upstream repo, how it runs.
@@ -216,6 +224,8 @@ export function AppView({
   const [supabaseOpen, setSupabaseOpen] = useState(false)
   const [notifyOpen, setNotifyOpen] = useState(false)
   const [notifyDraft, setNotifyDraft] = useState('')
+  const [timeoutOpen, setTimeoutOpen] = useState(false)
+  const [timeoutDraft, setTimeoutDraft] = useState('10')
   const [mobilePane, setMobilePane] = useState(initialBuild ? 'chat' : 'preview')
   const [preparing, setPreparing] = useState(false)
   const selectTab = (t: Tab) => {
@@ -450,6 +460,15 @@ export function AppView({
                 Email notifications
               </button>
               <button
+                onClick={() => {
+                  setTimeoutDraft(String(taskTimeoutMinutes(app.task_timeout_s)))
+                  setTimeoutOpen(true)
+                  setMenu(false)
+                }}
+              >
+                Agent time limit · {taskTimeoutMinutes(app.task_timeout_s)} min
+              </button>
+              <button
                 className="danger-text"
                 onClick={() => {
                   setDeleting(true)
@@ -656,6 +675,50 @@ export function AppView({
             }, connectionId ? 'Supabase connection linked' : 'Supabase connection removed')
           }
         />
+      )}
+      {timeoutOpen && (
+        <Dialog title="Agent time limit" close={() => !busy && setTimeoutOpen(false)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const minutes = Number(timeoutDraft)
+              if (!Number.isInteger(minutes) || minutes < 1 || minutes > maxTaskTimeoutMinutes) {
+                onError(`Enter a time limit from 1 to ${maxTaskTimeoutMinutes} minutes.`)
+                return
+              }
+              void act(async () => {
+                setApp(await api.updateApp(appId, { task_timeout_s: minutes * 60 }))
+                setTimeoutOpen(false)
+              }, `Agent time limit set to ${minutes} minutes`)
+            }}
+          >
+            <p className="field-help">
+              How long one chat message may run before the agent is stopped. The default is 10 minutes. The longest limit is 24 hours.
+            </p>
+            <label className="form-field">
+              Minutes
+              <Input
+                aria-label="Agent time limit in minutes"
+                data-testid="task-timeout-minutes"
+                type="number"
+                min={1}
+                max={maxTaskTimeoutMinutes}
+                step={1}
+                required
+                value={timeoutDraft}
+                onChange={(e) => setTimeoutDraft(e.target.value)}
+              />
+            </label>
+            <div className="dialog-actions">
+              <Btn onClick={() => setTimeoutOpen(false)} type="button">
+                Cancel
+              </Btn>
+              <Btn type="submit" variant="primary" disabled={busy}>
+                Save time limit
+              </Btn>
+            </div>
+          </form>
+        </Dialog>
       )}
       {notifyOpen && (
         <Dialog title="Email notifications" close={() => !busy && setNotifyOpen(false)}>

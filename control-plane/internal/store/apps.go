@@ -32,6 +32,9 @@ type App struct {
 	SupabaseConnectionID sql.NullString
 	// NotifyEmails (0030) are plain addresses emailed when a coding agent finishes.
 	NotifyEmails []string
+	// TaskTimeoutS (0031) is the per-project agent limit in seconds. 0 uses the
+	// 10 minute default.
+	TaskTimeoutS int
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -44,6 +47,7 @@ type AppPatch struct {
 	Tags                 *[]string
 	SupabaseConnectionID *string
 	NotifyEmails         *[]string
+	TaskTimeoutS         *int
 }
 
 func marshalTags(tags []string) string {
@@ -64,7 +68,7 @@ func scanApp(sc scanner) (*App, error) {
 	var emails string
 	err := sc.Scan(&a.ID, &a.OwnerToken, &a.ExternalUserID, &a.ExternalProjectID,
 		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated, &a.RuntimePreset,
-		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &a.SupabaseConnectionID, &emails)
+		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &a.SupabaseConnectionID, &emails, &a.TaskTimeoutS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -87,7 +91,7 @@ func scanApp(sc scanner) (*App, error) {
 const appSelectCols = `id, owner_token, external_user_id, external_project_id,
 	       name, description, tags, latest_snapshot_id, created_at, updated_at, runtime_preset,
 	       git_repo_url, git_branch, git_credential_id, last_import_at, supabase_connection_id,
-	       notify_emails`
+	       notify_emails, task_timeout_s`
 
 // SetAppImported stamps last_import_at after a successful Git clone.
 func (s *Store) SetAppImported(ctx context.Context, id string, at int64) error {
@@ -194,6 +198,10 @@ func (s *Store) UpdateApp(ctx context.Context, id, ownerToken string, patch AppP
 		if patch.NotifyEmails != nil {
 			sets = append(sets, "notify_emails = ?")
 			args = append(args, marshalTags(*patch.NotifyEmails))
+		}
+		if patch.TaskTimeoutS != nil {
+			sets = append(sets, "task_timeout_s = ?")
+			args = append(args, *patch.TaskTimeoutS)
 		}
 		// Always bump updated_at; an empty patch is a touch.
 		sets = append(sets, "updated_at = ?")

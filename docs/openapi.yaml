@@ -1831,6 +1831,7 @@ components:
         current_sandbox_id: { type: string, description: "Empty when the app has no live sandbox." }
         supabase_connection_id: { type: string, description: "Saved Supabase connection this project uses. Absent when none is linked." }
         notify_emails: { type: array, items: { type: string, format: email }, description: "Addresses emailed when the coding agent finishes. Empty when none are set." }
+        task_timeout_s: { type: integer, description: "Per-project agent time limit in seconds. 0 uses the 10 minute default. Maximum 86400 (24 hours)." }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     Preset:
@@ -1871,6 +1872,7 @@ components:
         tags: { type: array, items: { type: string } }
         supabase_connection_id: { type: string, description: "Saved Supabase connection id. Empty string removes the link." }
         notify_emails: { type: array, items: { type: string, format: email }, description: "Replace the addresses emailed when the coding agent finishes. An empty array turns notifications off." }
+        task_timeout_s: { type: integer, minimum: 0, maximum: 86400, description: "Per-project agent time limit in seconds. 0 restores the 10 minute default." }
     ConfigItem:
       type: object
       properties:
@@ -1989,7 +1991,7 @@ components:
             opencode wants "provider/model" (e.g. opencode/claude-sonnet-4-5), claude an
             alias/id (e.g. sonnet). Empty = the agent's default. Max 200 chars; validity
             is the agent's concern (an unknown model fails the task).
-        timeout_s: { type: integer, description: "0/omitted = 10m default; max 86400." }
+        timeout_s: { type: integer, description: "Per-task limit in seconds. 0 or omitted uses the project's task_timeout_s, or the 10 minute default when the project has none. An explicit value wins. Maximum 86400." }
     TaskResult:
       type: object
       properties:

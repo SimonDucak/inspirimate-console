@@ -13,6 +13,9 @@ import (
 // control-plane task watcher (which must outlive it).
 const DefaultTaskTimeout = 10 * time.Minute
 
+// MaxTaskTimeoutS is the longest task a request or a project may set (24h).
+const MaxTaskTimeoutS = 86400
+
 // TaskStatus is the lifecycle state of a coding task.
 type TaskStatus string
 

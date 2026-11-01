@@ -53,7 +53,8 @@ type v1TaskSubmitReq struct {
 	// agent's default. Unknown/unavailable models fail the task at the agent.
 	Model string `json:"model,omitempty"`
 	// TimeoutS sets the maximum task runtime in seconds.
-	// 0 or omitted means use the runtimed default (10m).
+	// 0 or omitted uses the project's task_timeout_s when that is set,
+	// and otherwise the runtimed default (10m).
 	TimeoutS int `json:"timeout_s,omitempty"`
 	// Continue resumes the sandbox's most recent agent session instead of a fresh
 	// one (works for all agents: claude/opencode --continue, codex resume --last).
@@ -125,11 +126,15 @@ func (s *Server) v1SubmitTask(w http.ResponseWriter, r *http.Request) {
 			"timeout_s must be >= 0")
 		return
 	}
-	const maxTimeoutS = 86400 // 24h
-	if req.TimeoutS > maxTimeoutS {
+	if req.TimeoutS > runtime.MaxTaskTimeoutS {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			fmt.Sprintf("timeout_s must be <= %d", maxTimeoutS))
+			fmt.Sprintf("timeout_s must be <= %d", runtime.MaxTaskTimeoutS))
 		return
+	}
+	// An explicit timeout_s wins. Otherwise a project limit replaces the
+	// 10 minute default; 0 still means "use that default" inside runtimed.
+	if req.TimeoutS == 0 {
+		req.TimeoutS = s.projectTaskTimeout(r.Context(), sb)
 	}
 	// Model is opaque + agent-namespaced; sandboxd only length-bounds it and
 	// leaves validity to the agent (which fails the task on an unknown model).
@@ -399,6 +404,30 @@ func (s *Server) v1TaskEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- POST /v1/sandboxes/{id}/tasks/{taskId}/cancel ------------------
+
+// projectTaskTimeout is the project's agent limit in seconds, or 0 when the
+// sandbox has no project limit. A stored value above the maximum is clamped.
+func (s *Server) projectTaskTimeout(ctx context.Context, sb *store.Sandbox) int {
+	if sb == nil || !sb.AppID.Valid || sb.AppID.String == "" || s.Store == nil {
+		return 0
+	}
+	app, err := s.Store.GetApp(ctx, sb.AppID.String)
+	if err != nil {
+		return 0
+	}
+	return clampProjectTimeout(app.TaskTimeoutS)
+}
+
+func clampProjectTimeout(seconds int) int {
+	switch {
+	case seconds <= 0:
+		return 0
+	case seconds > runtime.MaxTaskTimeoutS:
+		return runtime.MaxTaskTimeoutS
+	default:
+		return seconds
+	}
+}
 
 // supabaseGrant loads the project's linked connection and registers a
 // task-scoped proxy grant. A zero status means there is nothing to attach.

@@ -19,6 +19,7 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/gitimport"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/preset"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
@@ -42,6 +43,7 @@ type v1App struct {
 	Git                  *v1AppGit `json:"git,omitempty"`
 	SupabaseConnectionID string    `json:"supabase_connection_id,omitempty"`
 	NotifyEmails         []string  `json:"notify_emails"`
+	TaskTimeoutS         int       `json:"task_timeout_s"`
 	CurrentSandboxID     string    `json:"current_sandbox_id,omitempty"`
 	CreatedAt            string    `json:"created_at"`
 	UpdatedAt            string    `json:"updated_at"`
@@ -54,6 +56,7 @@ func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
 		Description:      a.Description,
 		Tags:             a.Tags,
 		NotifyEmails:     a.NotifyEmails,
+		TaskTimeoutS:     a.TaskTimeoutS,
 		CurrentSandboxID: currentSandboxID,
 		CreatedAt:        a.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:        a.UpdatedAt.UTC().Format(time.RFC3339),
@@ -236,6 +239,7 @@ type v1PatchAppReq struct {
 	Tags                 *[]string `json:"tags"`
 	SupabaseConnectionID *string   `json:"supabase_connection_id"`
 	NotifyEmails         *[]string `json:"notify_emails"`
+	TaskTimeoutS         *int      `json:"task_timeout_s"`
 }
 
 // v1PatchApp — PATCH /v1/apps/{id}.
@@ -273,6 +277,14 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		patch.NotifyEmails = &emails
+	}
+	if req.TaskTimeoutS != nil {
+		if *req.TaskTimeoutS < 0 || *req.TaskTimeoutS > runtime.MaxTaskTimeoutS {
+			writeV1Err(w, http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("task_timeout_s must be 0..%d", runtime.MaxTaskTimeoutS))
+			return
+		}
+		patch.TaskTimeoutS = req.TaskTimeoutS
 	}
 	err := s.Store.UpdateApp(r.Context(), id, tenantToken(r), patch)
 	if errors.Is(err, store.ErrNotFound) {
