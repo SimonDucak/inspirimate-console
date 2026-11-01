@@ -48,6 +48,7 @@ export function AgentChat({
   const [error, setError] = useState('')
   const [revertTarget, setRevertTarget] = useState<TaskSummary | null>(null)
   const [reverting, setReverting] = useState(false)
+  const [issue, setIssue] = useState('')
   const submitting = useRef(false)
   const initialSent = useRef(false)
   const saveDraftRef = useRef(saveDraft)
@@ -66,6 +67,7 @@ export function AgentChat({
     setResolved('')
     setTool('')
     setFiles([])
+    setIssue('')
   }, [sbID])
   const sandboxRunning = sb?.status === 'running' && ready
   const blocked = choiceBlocked(choice, providers, agents)
@@ -327,10 +329,13 @@ export function AgentChat({
                   <Icon name="spark" size={13} />
                   {t.agent || 'Agent'}
                 </span>
-                <AgentMessage text={t.agent_message || t.error_message || `Task ${t.status}`} />
+                <AgentMessage text={replyText(t)} />
               </div>
               <div className="turn-meta">
-                <span className={`task-status status-${t.status}`}>{t.status}</span>
+                <span className={`task-status ${statusClass(t.status)}`}>{statusLabel(t.status)}</span>
+                {t.status === 'failed' && (
+                  <IssueNote message={t.error_message} onView={setIssue} />
+                )}
                 {!!t.files_changed?.length && (
                   <details>
                     <summary>
@@ -476,6 +481,14 @@ export function AgentChat({
           )}
         </footer>
       </form>
+      {issue && (
+        <Dialog title="Issue while finishing" close={() => setIssue('')}>
+          <p className="task-issue-detail">{issue}</p>
+          <div className="dialog-actions">
+            <Btn onClick={() => setIssue('')}>Close</Btn>
+          </div>
+        </Dialog>
+      )}
       {revertTarget && (
         <Dialog title="Restore this checkpoint?" close={() => !reverting && setRevertTarget(null)}>
           <p>
@@ -494,6 +507,35 @@ export function AgentChat({
       )}
     </section>
   )
+}
+
+function IssueNote({ message, onView }: { message?: string; onView: (issue: string) => void }) {
+  const issue = message?.trim() || ''
+  return (
+    <p className="task-issue" role="status">
+      The agent ran into an issue while finishing. The feature may still be implemented correctly — please test it.
+      {issue && (
+        <button type="button" className="text-button" onClick={() => onView(issue)}>
+          View issue
+        </button>
+      )}
+    </p>
+  )
+}
+
+function statusLabel(status: string) {
+  return status === 'failed' ? 'finished' : status
+}
+
+function statusClass(status: string) {
+  return status === 'failed' ? 'status-finished' : `status-${status}`
+}
+
+function replyText(t: TaskSummary) {
+  const issue = t.error_message?.trim() || ''
+  const reply = t.agent_message?.trim() || ''
+  if (t.status === 'failed' && (!reply || reply === issue)) return 'The agent finished this turn.'
+  return reply || issue || `Task ${t.status}`
 }
 
 function UserPrompt({ prompt }: { prompt: string }) {

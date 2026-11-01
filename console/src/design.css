@@ -1604,9 +1604,27 @@ hr {
 .status-succeeded {
   color: var(--good);
 }
+.status-finished {
+  color: var(--muted);
+}
 .status-failed,
 .status-error {
   color: var(--bad);
+}
+.task-issue {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.task-issue .text-button {
+  margin-left: 6px;
+  font-size: 11px;
+}
+.task-issue-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .agent-progress {
   display: flex;
