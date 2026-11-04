@@ -17,6 +17,7 @@ type Snapshot struct {
 	IdleThresholdSeconds int
 	KeepaliveMaxSeconds  int
 	DefaultModels        map[string]string // agent id -> default model id
+	Locale               string            // console language: "en" or "sk"
 }
 
 // Live is the shared, mutable holder. Construct with New; read via the

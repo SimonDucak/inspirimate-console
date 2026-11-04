@@ -131,16 +131,7 @@ export function AgentConnection({
                   />
                 </label>
                 {mode === 'oauth' && !guided && (
-                  <p className="field-help">
-                    Use the credential from an existing {agent.label} login.{' '}
-                    <a
-                      href="https://github.com/tastyeffectco/sandboxd/blob/main/docs/agent-auth.md"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Connection guide ↗
-                    </a>
-                  </p>
+                  <p className="field-help">Use the credential from an existing {agent.label} login.</p>
                 )}
                 <div className="dialog-actions">
                   <Btn type="button" disabled={busy} onClick={close}>

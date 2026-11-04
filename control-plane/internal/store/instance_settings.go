@@ -5,8 +5,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
+
+// NormalizeLocale returns "en" or "sk". Anything else, including empty, is English.
+func NormalizeLocale(v string) string {
+	if strings.ToLower(strings.TrimSpace(v)) == "sk" {
+		return "sk"
+	}
+	return "en"
+}
 
 // InstanceSettings is the persisted, runtime-editable instance config: lifecycle
 // tuning (Phase 8B) plus per-agent default models. Only safe operational values —
@@ -19,18 +28,20 @@ type InstanceSettings struct {
 	// id used when a task doesn't specify one. Opaque, operator-supplied. Never nil
 	// on read (empty map when unset).
 	AgentDefaultModels map[string]string
+	// Locale is the console language for this instance: "en" or "sk".
+	Locale string
 }
 
 // GetInstanceSettings returns the singleton row, or ErrNotFound if unset (the
 // caller then falls back to env defaults).
 func (s *Store) GetInstanceSettings(ctx context.Context) (*InstanceSettings, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models
+		`SELECT idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, locale
 		   FROM instance_settings WHERE id = 1`)
 	var enabled int
 	var modelsJSON string
 	out := &InstanceSettings{}
-	err := row.Scan(&enabled, &out.IdleThresholdSeconds, &out.KeepaliveMaxSeconds, &modelsJSON)
+	err := row.Scan(&enabled, &out.IdleThresholdSeconds, &out.KeepaliveMaxSeconds, &modelsJSON, &out.Locale)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -38,6 +49,7 @@ func (s *Store) GetInstanceSettings(ctx context.Context) (*InstanceSettings, err
 		return nil, err
 	}
 	out.IdleReapEnabled = enabled != 0
+	out.Locale = NormalizeLocale(out.Locale)
 	out.AgentDefaultModels = map[string]string{}
 	if modelsJSON != "" {
 		// Tolerate a malformed value rather than failing the whole read.
@@ -61,16 +73,18 @@ func (s *Store) SaveInstanceSettings(ctx context.Context, v InstanceSettings) er
 		if err != nil {
 			return err
 		}
+		locale := NormalizeLocale(v.Locale)
 		_, err = db.ExecContext(ctx, `
-			INSERT INTO instance_settings (id, idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, updated_at)
-			VALUES (1, ?, ?, ?, ?, ?)
+			INSERT INTO instance_settings (id, idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds, agent_default_models, locale, updated_at)
+			VALUES (1, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 			  idle_reap_enabled = excluded.idle_reap_enabled,
 			  idle_threshold_seconds = excluded.idle_threshold_seconds,
 			  keepalive_max_seconds = excluded.keepalive_max_seconds,
 			  agent_default_models = excluded.agent_default_models,
+			  locale = excluded.locale,
 			  updated_at = excluded.updated_at`,
-			enabled, v.IdleThresholdSeconds, v.KeepaliveMaxSeconds, string(modelsJSON), time.Now().Unix())
+			enabled, v.IdleThresholdSeconds, v.KeepaliveMaxSeconds, string(modelsJSON), locale, time.Now().Unix())
 		return err
 	})
 }

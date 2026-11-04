@@ -58,7 +58,7 @@ export interface CatalogRecipe {
 // catalog and agent tasks (`POST /v1/sandboxes/{id}/tasks`).
 export function recipeAgentsMd(r: CatalogRecipe): string {
   const lines = [
-    `# ${r.name} (installed from the sandboxd App Store)`,
+    `# ${r.name} (installed from the Nakopávač App Store)`,
     '',
     `This workspace runs **${r.name}** — ${r.blurb}.`,
     '',

@@ -54,6 +54,8 @@ type v1Settings struct {
 	Agents            v1SettingsAgents  `json:"agents"`
 	Presets           []v1Preset        `json:"presets"`
 	Capabilities      map[string]bool   `json:"capabilities"`
+	// Locale is the console language for this instance: "en" or "sk".
+	Locale            string            `json:"locale"`
 	// Editable lists the field paths a client may change via PATCH /v1/settings.
 	// Everything else is read-only (env/file-managed or restart-required).
 	Editable []string `json:"editable"`
@@ -143,8 +145,11 @@ func (s *Server) v1GetSettings(w http.ResponseWriter, _ *http.Request) {
 			"forward_auth":   s.Auth != nil,
 		},
 	}
+	out.Locale = "en"
 	if s.Live != nil {
+		out.Locale = store.NormalizeLocale(s.Live.Snapshot().Locale)
 		out.Editable = []string{
+			"locale",
 			"lifecycle.idle_reap_enabled",
 			"lifecycle.idle_threshold_seconds",
 			"lifecycle.keepalive_max_seconds",
@@ -198,6 +203,7 @@ const (
 // DisallowUnknownFields means any other key — including protected ones (auth,
 // egress, networking, secrets, version) — is rejected with 400.
 type v1SettingsPatch struct {
+	Locale    *string `json:"locale"`
 	Lifecycle *struct {
 		IdleReapEnabled      *bool `json:"idle_reap_enabled"`
 		IdleThresholdSeconds *int  `json:"idle_threshold_seconds"`
@@ -226,16 +232,26 @@ func (s *Server) v1PatchSettings(w http.ResponseWriter, r *http.Request) {
 	var req v1SettingsPatch
 	if err := dec.Decode(&req); err != nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request",
-			"editable: lifecycle tunables (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds) and agents.default_models: "+err.Error())
+			"editable: locale (en, sk), lifecycle tunables (idle_reap_enabled, idle_threshold_seconds, keepalive_max_seconds) and agents.default_models: "+err.Error())
 		return
 	}
-	if req.Lifecycle == nil && req.Agents == nil {
+	if req.Locale == nil && req.Lifecycle == nil && req.Agents == nil {
 		writeV1Err(w, http.StatusBadRequest, "invalid_request", "no editable fields provided")
 		return
 	}
 
 	next := s.Live.Snapshot()
 	target := "settings"
+	if req.Locale != nil {
+		target = "locale"
+		switch strings.ToLower(strings.TrimSpace(*req.Locale)) {
+		case "en", "sk":
+			next.Locale = strings.ToLower(strings.TrimSpace(*req.Locale))
+		default:
+			writeV1Err(w, http.StatusBadRequest, "invalid_request", "locale must be en or sk")
+			return
+		}
+	}
 	if req.Lifecycle != nil {
 		target = "lifecycle"
 		if v := req.Lifecycle.IdleReapEnabled; v != nil {
@@ -288,11 +304,13 @@ func (s *Server) v1PatchSettings(w http.ResponseWriter, r *http.Request) {
 		next.DefaultModels = merged
 	}
 
+	next.Locale = store.NormalizeLocale(next.Locale)
 	if err := s.Store.SaveInstanceSettings(r.Context(), store.InstanceSettings{
 		IdleReapEnabled:      next.IdleEnabled,
 		IdleThresholdSeconds: next.IdleThresholdSeconds,
 		KeepaliveMaxSeconds:  next.KeepaliveMaxSeconds,
 		AgentDefaultModels:   next.DefaultModels,
+		Locale:               next.Locale,
 	}); err != nil {
 		writeV1Err(w, http.StatusInternalServerError, "internal", err.Error())
 		return

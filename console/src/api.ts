@@ -58,6 +58,7 @@ export interface Settings {
   agents: { providers: string[]; system_prompt?: string; default_models: Record<string, string> }
   presets: Preset[]
   capabilities: Record<string, boolean>
+  locale?: 'en' | 'sk'
   editable?: string[] // field paths the client may PATCH (e.g. lifecycle.*)
 }
 
@@ -77,6 +78,7 @@ export interface Agent {
 }
 
 export interface SettingsPatch {
+  locale?: 'en' | 'sk'
   lifecycle?: {
     idle_reap_enabled?: boolean
     idle_threshold_seconds?: number

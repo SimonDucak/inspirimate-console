@@ -3,6 +3,7 @@ import { api } from './api'
 import { CATALOG, CATEGORIES, CatalogRecipe, recipeManifest, recipeAgentsMd } from './catalog'
 import { c, font, Card, Btn, Input } from './design/kit'
 import { APP_ICONS } from './appIcons'
+import { useT } from './i18n'
 
 const initials = (name: string) =>
   name
@@ -66,6 +67,7 @@ export function StoreView({
   onOpen: (id: string) => void
   reloadApps: () => void
 }) {
+  const t = useT()
   const [cat, setCat] = useState<string>('all')
   const [q, setQ] = useState('')
   const [installing, setInstalling] = useState<string>('')
@@ -90,7 +92,7 @@ export function StoreView({
       await api.putWorkspaceFile(sb.id, 'AGENTS.md', recipeAgentsMd(r))
       await api.stopSandbox(sb.id).catch(() => undefined)
       await api.startSandbox(sb.id)
-      toast(`Installing ${r.name}…`)
+      toast(t('Installing {name}…', { name: r.name }))
       reloadApps()
       onOpen(app.id)
     } catch (e) {
@@ -103,11 +105,10 @@ export function StoreView({
   return (
     <div className="content-page library-page">
       <h1 style={{ fontFamily: font.display, fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>
-        App library
+        {t('App library')}
       </h1>
       <p style={{ color: c.muted, margin: '0 0 20px', maxWidth: 720 }}>
-        Make something useful your own. Explore open-source apps you can install, customize and run in your
-        workspace.
+        {t('Make something useful your own. Explore open-source apps you can install, customize and run in your workspace.')}
       </p>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
         {CATEGORIES.map((k) => (
@@ -126,21 +127,21 @@ export function StoreView({
               background: cat === k.id ? c.panel2 : 'transparent',
             }}
           >
-            {k.label}
+            {t(k.label)}
           </button>
         ))}
         <Input
-          aria-label="Search app library"
+          aria-label={t('Search app library')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search apps…"
+          placeholder={t('Search apps…')}
           style={{ marginLeft: 'auto', width: 220, fontFamily: font.sans }}
         />
       </div>
       <div className="library-grid">
         {items.length === 0 && (
           <p role="status" className="empty-state">
-            No apps match your search. Try another category or keyword.
+            {t('No apps match your search. Try another category or keyword.')}
           </p>
         )}
         {items.map((r) => (
@@ -151,7 +152,7 @@ export function StoreView({
               <span
                 style={{ marginLeft: 'auto', fontSize: 11, color: c.muted2, textTransform: 'capitalize' }}
               >
-                {r.category}
+                {t(CATEGORIES.find((k) => k.id === r.category)?.label || r.category)}
               </span>
             </div>
             <div style={{ color: c.fg2, fontSize: 12.5, flex: 1 }}>{r.blurb}</div>
@@ -162,7 +163,7 @@ export function StoreView({
               onClick={() => install(r)}
               style={{ border: `1px solid ${c.border2}`, background: c.panel2 }}
             >
-              {installing === r.id ? 'Installing…' : 'Install'}
+              {installing === r.id ? t('Installing…') : t('Install')}
             </Btn>
           </Card>
         ))}

@@ -1,4 +1,5 @@
 import { CSSProperties, ReactNode } from 'react'
+import { useT } from '../i18n'
 
 // Dark palette shared with the CSS variables in design.css.
 export const c = {
@@ -13,9 +14,9 @@ export const c = {
   faint: '#5c675e',
   border: '#2c3530',
   border2: '#3c4840',
-  ink: '#8ed9be',
+  ink: '#d85a00',
   ink2: '#c5cfc6',
-  link: '#8ed9be',
+  link: '#d85a00',
   good: '#4ade80',
   warn: '#f5b942',
   bad: '#f07167',
@@ -91,7 +92,7 @@ export function Btn({
     whiteSpace: 'nowrap',
   }
   const v: Record<BtnVariant, CSSProperties> = {
-    primary: { background: c.ink, color: '#062117', fontWeight: 600, border: 'none' },
+    primary: { background: c.ink, color: '#141414', fontWeight: 600, border: 'none' },
     outline: { background: c.panel2, border: `1px solid ${c.border2}`, color: c.fg },
     ghost: { background: 'transparent', border: `1px solid ${c.border2}`, color: c.muted },
     danger: { background: 'transparent', border: '1px solid rgba(220,38,38,.3)', color: c.bad },
@@ -152,10 +153,11 @@ export function statusTone(status?: string): Tone {
   return 'neutral'
 }
 export function StatusPill({ status }: { status?: string }) {
+  const t = useT()
   const s = status || 'no sandbox'
   return (
     <Pill tone={statusTone(status)} dot>
-      {s}
+      {t(s)}
     </Pill>
   )
 }

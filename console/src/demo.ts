@@ -46,6 +46,7 @@ const modelProviders = [
 
 const settings = {
   version: 'v0.3.0', git_commit: 'demo', update_available: false,
+  locale: 'en' as 'en' | 'sk',
   networking: { preview_domain: 'localhost', public_http_port: '80', preview_base: 'http://*.preview.localhost', preview_host_style: 'nested', preview_tls: false, preview_entrypoint: 'web' },
   auth: { enabled: false },
   runtime: { storage_mode: 'directory', base_image: 'sandboxd-base:0.3.0' },
@@ -54,7 +55,7 @@ const settings = {
   agents: { providers: ['opencode', 'pi', 'claude-code'], default_models: {} },
   presets,
   capabilities: { snapshots: true, config_secrets: true, templates: false, forward_auth: true },
-  editable: ['lifecycle.idle_reap_enabled', 'lifecycle.idle_threshold_seconds', 'lifecycle.keepalive_max_seconds'],
+  editable: ['locale', 'lifecycle.idle_reap_enabled', 'lifecycle.idle_threshold_seconds', 'lifecycle.keepalive_max_seconds'],
 }
 
 const tasks = [
@@ -73,9 +74,9 @@ const files = {
   ],
 }
 const fileContents: Record<string, string> = {
-  'BRAIN.md': `# Brain — Todo App\n\n## What this is\nPersonal todo list, single user, deployed as a sandboxd preview.\n\n## Current state\nAdd/remove works. Next: persistence — items reset on reload.\n\n## Stack & key choices\n- React + Vite, no backend — localStorage is enough for v1. (2026-07-09)\n- Reuses the shared [[Auth Brick]] pattern; images go through [[Image Resizer]].\n\n## Decisions\nFull log with reasoning: [[decisions]]\n\n## Gotchas & environment facts\n- Vite dev server must bind **0.0.0.0** or the preview 404s — see [[err-vite-host-binding]].\n  Verify: \`grep -n "host" sandbox.yaml\`\n\n## Dead ends\n- Tried IndexedDB wrapper (idb) — overkill for a flat list, localStorage wins.\n`,
+  'BRAIN.md': `# Brain — Todo App\n\n## What this is\nPersonal todo list, single user, deployed as a preview.\n\n## Current state\nAdd/remove works. Next: persistence — items reset on reload.\n\n## Stack & key choices\n- React + Vite, no backend — localStorage is enough for v1. (2026-07-09)\n- Reuses the shared [[Auth Brick]] pattern; images go through [[Image Resizer]].\n\n## Decisions\nFull log with reasoning: [[decisions]]\n\n## Gotchas & environment facts\n- Vite dev server must bind **0.0.0.0** or the preview 404s — see [[err-vite-host-binding]].\n  Verify: \`grep -n "host" sandbox.yaml\`\n\n## Dead ends\n- Tried IndexedDB wrapper (idb) — overkill for a flat list, localStorage wins.\n`,
   'brain/decisions.md': `# decisions\n\n- D2 (2026-07-12): Ship without a service worker — offline mode can wait for real demand.\n- D1 (2026-07-09): No user accounts — single-user tool, auth is pure overhead.\n  Related: the shared [[Auth Brick]] exists if this ever changes.\n`,
-  'src/App.tsx': `import { useState } from 'react'\n\nexport default function App() {\n  const [items, setItems] = useState<string[]>(['Try sandboxd'])\n  const [text, setText] = useState('')\n  return (\n    <main>\n      <h1>Todo</h1>\n      <input value={text} onChange={e => setText(e.target.value)} />\n      <button onClick={() => { setItems([...items, text]); setText('') }}>Add</button>\n      <ul>{items.map((t, i) => <li key={i} onClick={() => setItems(items.filter((_, j) => j !== i))}>{t}</li>)}</ul>\n    </main>\n  )\n}\n`,
+  'src/App.tsx': `import { useState } from 'react'\n\nexport default function App() {\n  const [items, setItems] = useState<string[]>(['Try Nakopávač'])\n  const [text, setText] = useState('')\n  return (\n    <main>\n      <h1>Todo</h1>\n      <input value={text} onChange={e => setText(e.target.value)} />\n      <button onClick={() => { setItems([...items, text]); setText('') }}>Add</button>\n      <ul>{items.map((t, i) => <li key={i} onClick={() => setItems(items.filter((_, j) => j !== i))}>{t}</li>)}</ul>\n    </main>\n  )\n}\n`,
   'sandbox.yaml': `version: 1\nweb:\n  command: "[ -x node_modules/.bin/vite ] || pnpm install; pnpm exec vite --host 0.0.0.0 --port 3000"\n  port: 3000\n  health_path: "/"\n`,
   'package.json': `{\n  "name": "todo-app",\n  "private": true,\n  "scripts": { "dev": "vite", "build": "vite build" }\n}\n`,
 }
@@ -101,15 +102,21 @@ const manifest = {
   effective: { web: { command: 'pnpm exec vite --host 0.0.0.0 --port 3000', port: 3000, health_path: '/' }, workers: [] },
 }
 
-const READ_ONLY = { error: { message: 'This is a read-only demo — install sandboxd to run it for real:  curl -fsSL https://raw.githubusercontent.com/tastyeffectco/sandboxd/main/install.sh | bash' } }
+const READ_ONLY = { error: { message: 'This is a read-only demo.' } }
 
 function match(p: string, re: RegExp) { return re.test(p) }
 
 // Returns { status, body } | { status, text } for a given request.
-function route(method: string, url: string): { status: number; body?: unknown; text?: string } {
+function route(method: string, url: string, body?: unknown): { status: number; body?: unknown; text?: string } {
   const u = url.split('?')[0]
   const q = url.includes('?') ? url.slice(url.indexOf('?') + 1) : ''
   const isWrite = method !== 'GET' && method !== 'HEAD'
+  if (method === 'PATCH' && match(u, /\/v1\/settings$/)) {
+    const locale = (body as { locale?: string } | undefined)?.locale
+    if (locale !== 'en' && locale !== 'sk') return { status: 400, body: { error: { message: 'locale must be en or sk' } } }
+    settings.locale = locale
+    return { status: 200, body: settings }
+  }
 
   // File content (raw text).
   if (match(u, /\/v1\/sandboxes\/[^/]+\/files\/content$/)) {
@@ -164,10 +171,18 @@ function fakeResponse(r: { status: number; body?: unknown; text?: string }): Res
 
 export function installDemo() {
   const realFetch = globalThis.fetch
-  globalThis.fetch = (async (input: unknown, init?: { method?: string }) => {
+  globalThis.fetch = (async (input: unknown, init?: { method?: string; body?: BodyInit | null }) => {
     const url = typeof input === 'string' ? input : String((input as { url?: string })?.url || '')
     if (!url.startsWith('/v1/')) return realFetch(input as RequestInfo, init as RequestInit)
     const method = (init?.method || 'GET').toUpperCase()
-    return fakeResponse(route(method, url))
+    let body: unknown
+    if (typeof init?.body === 'string') {
+      try {
+        body = JSON.parse(init.body)
+      } catch {
+        body = undefined
+      }
+    }
+    return fakeResponse(route(method, url, body))
   }) as typeof fetch
 }

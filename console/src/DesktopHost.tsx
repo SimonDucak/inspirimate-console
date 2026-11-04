@@ -5,12 +5,15 @@ import { Icon } from './design/Icon'
 import { Btn, Input } from './design/kit'
 import { Dialog } from './design/Dialog'
 import { confirmLeaveWorkspace } from './unsavedChanges'
+import { BrandMark, brandName } from './BrandMark'
+import { useT } from './i18n'
 import './desktop.css'
 
 const bridge = window.sandboxdDesktop
 const local = { name: 'This computer', url: 'http://127.0.0.1:9090', allowInsecure: false }
 
 export default function DesktopHost() {
+  const t = useT()
   const [state, setState] = useState<DesktopState | null>(null)
   const [connections, setConnections] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -27,7 +30,7 @@ export default function DesktopHost() {
   }, [])
   useEffect(() => {
     if (!bridge) {
-      setError('Open this build with the Inspirimate desktop app.')
+      setError(t(`Open this build with the {brand} desktop app.`, { brand: brandName }))
       return
     }
     void bridge
@@ -62,7 +65,7 @@ export default function DesktopHost() {
     <div className={`desktop-client platform-${state?.platform || 'unknown'}`}>
       <header className="desktop-titlebar">
         <span className="desktop-wordmark">
-          <Icon name="box" size={16} /> Inspirimate <small>STUDIO</small>
+          <BrandMark />
         </span>
         {selected && (
           <button className="desktop-engine-pill" onClick={() => setConnections(true)} title={selected.url}>
@@ -109,53 +112,39 @@ export default function DesktopHost() {
               <div className="desktop-app-mark">
                 <Icon name="box" size={36} />
               </div>
-              <span className="eyebrow">A LITTLE SPACE. BIG POSSIBILITIES.</span>
+              <span className="eyebrow">{t('A LITTLE SPACE. BIG POSSIBILITIES.')}</span>
               <h1>
-                Your ideas,
+                {t('Your ideas,')}
                 <br />
-                at home.
+                {t('at home.')}
               </h1>
               <p>
-                Build with your coding agent. Shape every detail. Keep your work on infrastructure you
-                control.
+                {t('Build with your coding agent. Shape every detail. Keep your work on infrastructure you control.')}
               </p>
               <div className="desktop-feature-list">
                 <span>
                   <Icon name="spark" />
-                  Start with a prompt
+                  {t('Start with a prompt')}
                 </span>
                 <span>
                   <Icon name="monitor" />
-                  See your ideas take shape
+                  {t('See your ideas take shape')}
                 </span>
                 <span>
                   <Icon name="lock" />
-                  Your engine. Your workspace.
+                  {t('Your engine. Your workspace.')}
                 </span>
               </div>
-              <small>Open source · Made for your desktop</small>
+              <small>{t('Made for your desktop')}</small>
             </aside>
             <main className="desktop-connect-page">
-              <div className="eyebrow">WELCOME TO INSPIRIMATE</div>
-              <h2>Connect your engine.</h2>
-              <p>Your desktop is ready. Choose where your apps will run.</p>
+              <div className="eyebrow">{t('WELCOME TO NAKOPÁVAČ')}</div>
+              <h2>{t('Connect your engine.')}</h2>
+              <p>{t('Your desktop is ready. Choose where your apps will run.')}</p>
               <ConnectionForm state={state} onConnected={connected} onBusy={setConnecting} />
               <div className="desktop-setup-help">
-                <strong>New to Inspirimate?</strong>
-                <p>
-                  The engine runs your apps and agents. Connect an existing engine, or follow the local setup
-                  guide.
-                </p>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    void bridge?.openExternal(
-                      'https://github.com/tastyeffectco/sandboxd/blob/main/docs/desktop.md',
-                    )
-                  }
-                >
-                  Set up an engine <Icon name="external" size={13} />
-                </button>
+                <strong>{t('New to {brand}?', { brand: brandName })}</strong>
+                <p>{t('The engine runs your apps and agents. Connect an existing engine on this computer or on your server.')}</p>
               </div>
             </main>
           </div>
@@ -229,6 +218,7 @@ function ConnectionForm({
   onConnected: (state: DesktopState) => void
   onBusy: (busy: boolean) => void
 }) {
+  const t = useT()
   const [choice, setChoice] = useState<DesktopConnection>(
     state.connections.find((c) => c.url === state.selected) || local,
   )
@@ -261,8 +251,8 @@ function ConnectionForm({
           }}
         >
           <Icon name="monitor" />
-          <strong>This computer</strong>
-          <span>A local Inspirimate engine</span>
+          <strong>{t('This computer')}</strong>
+          <span>{t('A local {brand} engine', { brand: brandName })}</span>
         </button>
         <button
           aria-pressed={mode === 'remote'}
@@ -273,8 +263,8 @@ function ConnectionForm({
           }}
         >
           <Icon name="external" />
-          <strong>Remote engine</strong>
-          <span>Your server or team instance</span>
+          <strong>{t('Remote engine')}</strong>
+          <span>{t('Your server or team instance')}</span>
         </button>
       </div>
       <form
@@ -303,7 +293,7 @@ function ConnectionForm({
             required
             value={choice.url}
             onChange={(e) => setChoice({ ...choice, url: e.target.value })}
-            placeholder="https://sandboxd.example.com"
+            placeholder="https://engine.example.com"
             disabled={busy}
             data-testid="desktop-engine-url"
           />

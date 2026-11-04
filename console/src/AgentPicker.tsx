@@ -1,4 +1,5 @@
 import type { Agent, ModelProvider } from './api'
+import { useT } from './i18n'
 
 export type AgentChoice = { agent: string; provider: string; model: string }
 export const defaultChoice: AgentChoice = { agent: 'opencode', provider: '', model: '' }
@@ -33,6 +34,7 @@ export function AgentPicker({
   agents: Agent[]
   disabled?: boolean
 }) {
+  const t = useT()
   const selected = providers.find((p) => p.id === value.provider)
   const modelValue = selected
     ? selected.models.some((model) => model.id === value.model)
@@ -42,7 +44,7 @@ export function AgentPicker({
   return (
     <div className="agent-picker">
       <label>
-        Coding agent
+        {t('Coding agent')}
         <select
           disabled={disabled}
           data-testid="task-agent"
@@ -62,10 +64,10 @@ export function AgentPicker({
       </label>
       {value.agent !== 'claude-code' && (
         <label>
-          Connection
+          {t('Connection')}
           <select
             disabled={disabled}
-            aria-label="Model connection"
+            aria-label={t('Model connection')}
             data-testid="task-provider"
             value={value.provider}
             onChange={(e) => {
@@ -73,7 +75,7 @@ export function AgentPicker({
               onChange({ ...value, provider: e.target.value, model: next ? preferredModel(next) : '' })
             }}
           >
-            <option value="">{value.agent === 'pi' ? 'Select a connection…' : 'Built-in provider'}</option>
+            <option value="">{value.agent === 'pi' ? t('Select a connection…') : t('Built-in provider')}</option>
             {providers.map((p) => (
               <option value={p.id} key={p.id}>
                 {p.name}
@@ -83,7 +85,7 @@ export function AgentPicker({
         </label>
       )}
       <label className="full-width">
-        Model
+        {t('Model')}
         <select
           disabled={disabled}
           data-testid="task-model"
@@ -94,11 +96,11 @@ export function AgentPicker({
             selected.models.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.id}
-                {model.id === preferredModel(selected) ? ' (default)' : ''}
+                {model.id === preferredModel(selected) ? t(' (default)') : ''}
               </option>
             ))
           ) : (
-            <option value="">Default model</option>
+            <option value="">{t('Default model')}</option>
           )}
           {!value.provider &&
             value.agent === 'opencode' &&
@@ -113,13 +115,13 @@ export function AgentPicker({
       </label>
       <p className="field-help full-width">
         {value.agent === 'pi'
-          ? 'Pi uses your model connection.'
+          ? t('Pi uses your model connection.')
           : value.provider
-            ? 'Your model endpoint. Your API key stays on the control plane.'
+            ? t('Your model endpoint. Your API key stays on the control plane.')
             : value.agent === 'opencode' &&
                 !agents.some((a) => a.id === 'opencode' && a.status === 'connected')
-              ? 'OpenCode can start with its built-in free tier.'
-              : 'Uses the account connected in Settings.'}
+              ? t('OpenCode can start with its built-in free tier.')
+              : t('Uses the account connected in Settings.')}
       </p>
     </div>
   )

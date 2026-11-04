@@ -175,6 +175,43 @@ func TestPatchAgentDefaultModelsValidation(t *testing.T) {
 	}
 }
 
+// Locale is stored for the whole instance and echoed. Other settings stay put.
+func TestPatchLocale(t *testing.T) {
+	s := newSettingsServer(t)
+	w := patchSettings(s, `{"locale":"sk"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", w.Code, w.Body)
+	}
+	if got := s.Live.Snapshot().Locale; got != "sk" {
+		t.Errorf("live locale = %q", got)
+	}
+	p, err := s.Store.GetInstanceSettings(context.Background())
+	if err != nil || p.Locale != "sk" {
+		t.Fatalf("persisted locale = %+v err=%v", p, err)
+	}
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["locale"] != "sk" {
+		t.Errorf("echo locale = %v", resp["locale"])
+	}
+	if s.Live.Snapshot().IdleThresholdSeconds != 2100 {
+		t.Error("locale patch changed lifecycle")
+	}
+
+	w = patchSettings(s, `{"locale":"fr"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid locale: got %d", w.Code)
+	}
+	if s.Live.Snapshot().Locale != "sk" {
+		t.Error("invalid locale was applied")
+	}
+
+	w = patchSettings(s, `{"locale":"en"}`)
+	if w.Code != http.StatusOK || s.Live.Snapshot().Locale != "en" {
+		t.Fatalf("reset to en: %d %q", w.Code, s.Live.Snapshot().Locale)
+	}
+}
+
 // With no Live config wired (e.g. older deploy/tests), PATCH is unavailable.
 func TestPatchSettingsUnavailableWithoutLive(t *testing.T) {
 	s := &Server{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}

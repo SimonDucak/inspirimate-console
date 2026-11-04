@@ -3,6 +3,7 @@ import { api, AccessPolicy, ConfigItem } from './api'
 import { Btn, Input } from './design/kit'
 import { Icon } from './design/Icon'
 import { Dialog } from './design/Dialog'
+import { useT } from './i18n'
 
 const policies: Record<AccessPolicy, string> = {
   control_plane_only: 'Control plane only',
@@ -19,6 +20,7 @@ export function SecretsPanel({
   onError: (m: string) => void
   toast: (m: string) => void
 }) {
+  const t = useT()
   const [items, setItems] = useState<ConfigItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<ConfigItem | 'new' | null>(null)
@@ -87,31 +89,30 @@ export function SecretsPanel({
     <section className="workspace-settings" data-testid="config-panel">
       <div className="section-heading">
         <div>
-          <div className="eyebrow">PROJECT CONFIGURATION</div>
-          <h2>Secrets & variables</h2>
-          <p>Keep credentials out of your source code.</p>
+          <div className="eyebrow">{t('PROJECT CONFIGURATION')}</div>
+          <h2>{t('Secrets & variables')}</h2>
+          <p>{t('Keep credentials out of your source code.')}</p>
         </div>
         <Btn variant="primary" onClick={() => edit()}>
-          <Icon name="plus" size={14} /> Add value
+          <Icon name="plus" size={14} /> {t('Add value')}
         </Btn>
       </div>
       <div className="info-banner">
         <Icon name="lock" />
         <div>
-          <strong>Secrets are encrypted and write-only.</strong>
+          <strong>{t('Secrets are encrypted and write-only.')}</strong>
           <p>
-            These values are stored by Inspirimate. They are not automatically injected into the app’s
-            environment. Access policies record the intended broker access.
+            {t('These values are stored by Nakopávač. They are not automatically injected into the app’s environment. Access policies record the intended broker access.')}
           </p>
         </div>
       </div>
       {loading ? (
-        <p role="status">Loading configuration…</p>
+        <p role="status">{t('Loading configuration…')}</p>
       ) : !items.length ? (
         <div className="empty-state">
           <Icon name="lock" size={30} />
-          <h3>A safe place for app configuration</h3>
-          <p>Add API keys as secrets and public configuration as variables.</p>
+          <h3>{t('A safe place for app configuration')}</h3>
+          <p>{t('Add API keys as secrets and public configuration as variables.')}</p>
           <Btn onClick={() => edit()}>Add your first value</Btn>
         </div>
       ) : (

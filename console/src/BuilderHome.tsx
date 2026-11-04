@@ -5,6 +5,7 @@ import { Icon } from './design/Icon'
 import { Btn, Input, StatusPill } from './design/kit'
 import { PRESET_ICONS } from './design/presetIcons'
 import { STARTERS } from './design/starters'
+import { useT } from './i18n'
 
 const ideas = [
   {
@@ -53,6 +54,7 @@ export function BuilderHome({
   draft?: BuilderDraft
   saveDraft: (draft?: BuilderDraft) => void
 }) {
+  const t = useT()
   const [prompt, setPrompt] = useState(draft?.prompt || '')
   const [name, setName] = useState(draft?.name || '')
   const [choice, setChoice] = useState(draft?.choice || defaultChoice)
@@ -123,7 +125,7 @@ export function BuilderHome({
     }
     creating.current = true
     setError('')
-    setBusy('Creating your app…')
+    setBusy(t('Creating your app…'))
     const selectedStarter = STARTERS.find((s) => s.id === starter)
     const fromRepo = repo.trim() || (selectedStarter ? `https://github.com/${selectedStarter.repo}` : '')
     const title =
@@ -149,7 +151,7 @@ export function BuilderHome({
             }
           : undefined,
       })
-      setBusy('Preparing the workspace…')
+      setBusy(t('Preparing the workspace…'))
       // The app exists even when boot fails. Open it with the draft intact so
       // users can retry starting it, without accidentally creating another app.
       try {
@@ -176,16 +178,16 @@ export function BuilderHome({
     <div className="builder-home">
       <section className="build-hero">
         <div className="eyebrow">
-          <span className="brand-dot" /> YOUR IDEAS. YOUR INFRASTRUCTURE.
+          <span className="brand-dot" /> {t('YOUR IDEAS. YOUR INFRASTRUCTURE.')}
         </div>
         <h1>
-          What do you want
-          <br className="hero-break" /> to build?
+          {t('What do you want')}
+          <br className="hero-break" /> {t('to build?')}
         </h1>
-        <p>Start with an idea. Bring it to life with your coding agent.</p>
+        <p>{t('Start with an idea. Bring it to life with your coding agent.')}</p>
         <div className="build-composer">
           <label className="sr-only" htmlFor="build-prompt">
-            Describe your app
+            {t('Describe your app')}
           </label>
           <textarea
             ref={composer}
@@ -201,7 +203,7 @@ export function BuilderHome({
                 void create()
               }
             }}
-            placeholder="Describe an app, a website, a tool… What should it do?"
+            placeholder={t('Describe an app, a website, a tool… What should it do?')}
           />
           <div className="composer-controls">
             <div className="composer-options">
@@ -213,7 +215,7 @@ export function BuilderHome({
                 data-testid="stack-toggle"
               >
                 <Icon name="box" size={15} />
-                {presets.find((p) => p.id === preset)?.label || 'Choose stack'}
+                {presets.find((p) => p.id === preset)?.label || t('Choose stack')}
                 <Icon name="chevron" size={13} />
               </button>
               <button
@@ -228,7 +230,7 @@ export function BuilderHome({
               </button>
               <button
                 className="icon-button"
-                aria-label="Project options"
+                aria-label={t('Project options')}
                 aria-expanded={panel === 'project'}
                 onClick={() => toggle('project')}
                 disabled={!!busy}
@@ -242,7 +244,7 @@ export function BuilderHome({
               disabled={!!busy || blocked || (!prompt.trim() && !repo && !starter)}
               data-testid="build-app"
             >
-              {busy || (prompt.trim() || (!repo && !starter) ? 'Build app' : 'Create app')}
+              {busy || (prompt.trim() || (!repo && !starter) ? t('Build app') : t('Create app'))}
               <Icon name="arrow" size={18} />
             </button>
           </div>
@@ -252,17 +254,17 @@ export function BuilderHome({
                 <strong>
                   {
                     {
-                      stack: 'Start with the right foundation',
-                      agent: 'Your coding agent & model',
-                      git: 'Import a repository',
-                      project: 'Project details',
-                      starter: 'Start from a template',
+                      stack: t('Start with the right foundation'),
+                      agent: t('Your coding agent & model'),
+                      git: t('Import a repository'),
+                      project: t('Project details'),
+                      starter: t('Start from a template'),
                     }[panel]
                   }
                 </strong>
                 <button
                   className="icon-button"
-                  aria-label="Close build options"
+                  aria-label={t('Close build options')}
                   onClick={() => setPanel(null)}
                 >
                   <Icon name="close" size={16} />
@@ -275,8 +277,8 @@ export function BuilderHome({
                     onClick={() => setPreset('')}
                   >
                     <Icon name="spark" />
-                    <strong>Automatic</strong>
-                    <span>Use the default starter. Detect the runtime as you build.</span>
+                    <strong>{t('Automatic')}</strong>
+                    <span>{t('Use the default starter. Detect the runtime as you build.')}</span>
                   </button>
                   {presets.map((p) => (
                     <button
@@ -300,17 +302,17 @@ export function BuilderHome({
                 <>
                   <AgentPicker value={choice} onChange={setChoice} providers={providers} agents={agents} />
                   <button className="text-button" onClick={goSettings}>
-                    Manage agents & connections <Icon name="arrow" size={14} />
+                    {t('Manage agents & connections')} <Icon name="arrow" size={14} />
                   </button>
                 </>
               )}
               {panel === 'project' && (
                 <label className="form-field">
-                  App name{' '}
+                  {t('App name')}{' '}
                   <Input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Optional — we’ll use your idea"
+                    placeholder={t('Optional — we’ll use your idea')}
                     maxLength={80}
                     data-testid="app-name"
                   />
@@ -319,7 +321,7 @@ export function BuilderHome({
               {panel === 'git' && (
                 <div className="form-grid">
                   <label className="form-field full-width">
-                    Repository URL
+                    {t('Repository URL')}
                     <Input
                       type="url"
                       value={repo}
@@ -332,7 +334,7 @@ export function BuilderHome({
                     />
                   </label>
                   <label className="form-field">
-                    Branch
+                    {t('Branch')}
                     <Input
                       value={branch}
                       onChange={(e) => setBranch(e.target.value)}
@@ -340,13 +342,13 @@ export function BuilderHome({
                     />
                   </label>
                   <label className="form-field">
-                    Git credential
+                    {t('Git credential')}
                     <select
                       value={credential}
                       onChange={(e) => setCredential(e.target.value)}
                       data-testid="git-cred"
                     >
-                      <option value="">Public repository</option>
+                      <option value="">{t('Public repository')}</option>
                       {creds.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
@@ -355,11 +357,11 @@ export function BuilderHome({
                     </select>
                   </label>
                   <p className="field-help full-width">
-                    Private repository?{' '}
+                    {t('Private repository?')}{' '}
                     <button className="text-button" onClick={goSettings}>
-                      Add a credential in Settings
+                      {t('Add a credential in Settings')}
                     </button>
-                    . The runtime is detected from your repository.
+                    {t('. The runtime is detected from your repository.')}
                   </p>
                 </div>
               )}
@@ -394,14 +396,14 @@ export function BuilderHome({
                   setCredential('')
                 }}
               >
-                Clear import
+                {t('Clear import')}
               </button>
             </div>
           )}
         </div>
         {busy && (
           <p role="status" className="build-status">
-            {busy} Your prompt will run when the workspace is ready.
+            {busy} {t('Your prompt will run when the workspace is ready.')}
           </p>
         )}
         {error && (
@@ -411,21 +413,21 @@ export function BuilderHome({
         )}
         {blocked && (
           <p role="status" className="inline-error">
-            Connect {choice.agent === 'pi' ? 'a model for Pi' : 'your agent'} to build.{' '}
+            {t('Connect {who} to build.', { who: choice.agent === 'pi' ? t('a model for Pi') : t('your agent') })}{' '}
             <button className="text-button" onClick={goSettings}>
-              Open Settings
+              {t('Open Settings')}
             </button>
           </p>
         )}
         <div className="start-paths">
           <button onClick={() => toggle('git')} disabled={!!busy}>
-            <Icon name="git" size={16} /> Import from Git
+            <Icon name="git" size={16} /> {t('Import from Git')}
           </button>
           <button onClick={() => toggle('starter')} disabled={!!busy}>
-            <Icon name="box" size={16} /> Use a starter
+            <Icon name="box" size={16} /> {t('Use a starter')}
           </button>
           <button onClick={() => void create(false)} disabled={!!busy}>
-            <Icon name="plus" size={16} /> Blank project
+            <Icon name="plus" size={16} /> {t('Blank project')}
           </button>
         </div>
         <div className="idea-chips">
@@ -438,7 +440,7 @@ export function BuilderHome({
                 composer.current?.focus()
               }}
             >
-              {i.title}
+              {t(i.title)}
               <Icon name="arrow" size={13} />
             </button>
           ))}
@@ -448,15 +450,15 @@ export function BuilderHome({
         <div className="section-heading">
           <div>
             <h2>
-              Your projects <span>{apps.length}</span>
+              {t('Your projects')} <span>{apps.length}</span>
             </h2>
-            <p>Pick up where you left off.</p>
+            <p>{t('Pick up where you left off.')}</p>
           </div>
           <label className="project-search">
             <Icon name="search" size={16} />
             <input
-              aria-label="Search projects"
-              placeholder="Find a project…"
+              aria-label={t('Search projects')}
+              placeholder={t('Find a project…')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -465,12 +467,12 @@ export function BuilderHome({
         {apps.length === 0 ? (
           <div className="empty-projects">
             <Icon name="grid" size={26} />
-            <h3>A home for everything you build</h3>
-            <p>Your projects, live previews and conversations will appear here.</p>
-            <Btn onClick={goStore}>Explore the app library</Btn>
+            <h3>{t('A home for everything you build')}</h3>
+            <p>{t('Your projects, live previews and conversations will appear here.')}</p>
+            <Btn onClick={goStore}>{t('Explore the app library')}</Btn>
           </div>
         ) : filtered.length === 0 ? (
-          <p className="empty-state">No projects match “{query}”.</p>
+          <p className="empty-state">{t('No projects match “{query}”.', { query })}</p>
         ) : (
           <div className="project-grid" data-testid="app-list">
             {filtered.map((a, i) => (
@@ -484,10 +486,10 @@ export function BuilderHome({
                     <h3>{a.name}</h3>
                     <Icon name="arrow" size={17} />
                   </div>
-                  <p>{a.description || (a.git ? a.git.repo_url : 'Ready for your next idea')}</p>
+                  <p>{a.description || (a.git ? a.git.repo_url : t('Ready for your next idea'))}</p>
                   <footer>
                     <StatusPill status={a.current_sandbox_id ? status[a.id] || 'loading' : 'not started'} />
-                    <span>{a.runtime_preset || (a.git ? 'Imported project' : 'App workspace')}</span>
+                    <span>{a.runtime_preset || (a.git ? t('Imported project') : t('App workspace'))}</span>
                   </footer>
                 </div>
               </button>
@@ -498,19 +500,19 @@ export function BuilderHome({
       <div className="capability-strip">
         <span>
           <Icon name="monitor" />
-          Live previews
+          {t('Live previews')}
         </span>
         <span>
           <Icon name="code" />
-          Code & terminal
+          {t('Code & terminal')}
         </span>
         <span>
           <Icon name="history" />
-          Snapshots & restore
+          {t('Snapshots & restore')}
         </span>
         <span>
           <Icon name="lock" />
-          Your infrastructure
+          {t('Your infrastructure')}
         </span>
       </div>
     </div>

@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { Settings, UpgradeState } from './api'
 import { c, mono } from './design/kit'
 import { Notes } from './notes'
+import { brandName } from './BrandMark'
+import { useT } from './i18n'
 
 // The one place the console talks about versions: a small pill in the bottom
 // left showing the running build, with a panel above it for what's new, the
-// breaking-changes notice, the in-place upgrade, and a bug-report link that
-// carries the version automatically. Nothing here shifts the layout.
+// breaking-changes notice, and the in-place upgrade. Nothing here shifts the layout.
 export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade, clearUpgrade }: {
   settings: Settings
   // Dismissal is per latest version ("Remind me later"); it only drops the
@@ -17,6 +18,7 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
   startUpgrade: (target: string) => void
   clearUpgrade: () => void
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const [ack, setAck] = useState(false)
@@ -40,18 +42,12 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
   const failed = upg?.phase === 'failed' || upg?.phase === 'rolled_back'
   const showDot = !!latest && !dismissed && !running && !failed
 
-  const pillText = running ? `Upgrading to ${upg?.target}…`
-    : failed ? `Upgrade ${upg?.phase === 'rolled_back' ? 'rolled back' : 'failed'}`
-    : latest ? `Inspirimate ${version} · ${untagged ? `untagged build · latest ${latest}` : `${latest} available`}`
-    : `Inspirimate ${version}`
-
-  const issueBody = [
-    `**Version:** ${version}${commit ? ` (${commit})` : ''}`,
-    `**Preview host style:** ${settings.networking?.preview_host_style || ''}`,
-    `**Browser:** ${typeof navigator !== 'undefined' ? navigator.userAgent : ''}`,
-    '', '**What happened**', '', '**Steps**', '',
-  ].join('\n')
-  const issueURL = `https://github.com/tastyeffectco/sandboxd/issues/new?title=&body=${encodeURIComponent(issueBody)}`
+  const pillText = running ? t('Upgrading to {target}…', { target: upg?.target || '' })
+    : failed ? (upg?.phase === 'rolled_back' ? t('Upgrade rolled back') : t('Upgrade failed'))
+    : latest ? (untagged
+      ? t('{brand} {version} · untagged build · latest {latest}', { brand: brandName, version, latest })
+      : t('{brand} {version} · {latest} available', { brand: brandName, version, latest }))
+    : t('{brand} {version}', { brand: brandName, version })
 
   const btn = (primary: boolean, disabled = false) => ({
     font: 'inherit', fontSize: 12, padding: '3px 10px', borderRadius: 5, border: `1px solid ${c.border}`,
@@ -73,8 +69,6 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
         <div data-testid="version-panel" role="dialog" style={{ position: 'absolute', left: 0, bottom: 'calc(100% + 8px)', width: 440, maxWidth: 'calc(100vw - 24px)', background: c.panel, border: `1px solid ${c.border}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.14)', padding: 14 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
             <span style={{ ...mono, fontSize: 12.5, fontWeight: 600 }}>{version}{commit && <span style={{ color: c.muted, fontWeight: 400 }}> · {commit}</span>}</span>
-            <span style={{ flex: 1 }} />
-            <a data-testid="report-issue" href={issueURL} target="_blank" rel="noreferrer" style={{ color: c.muted, textDecoration: 'none' }}>Report an issue ↗</a>
           </div>
 
           {running ? (
@@ -85,7 +79,7 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
               <span className="dc-hoverink" style={{ marginLeft: 8, color: c.link, cursor: 'pointer' }} onClick={clearUpgrade}>ok</span>
             </div>
           ) : !latest ? (
-            <div style={{ color: c.muted }}>You're on the latest release.</div>
+            <div style={{ color: c.muted }}>{t("You're on the latest release.")}</div>
           ) : confirm ? (
             <div data-testid="upgrade-confirm">
               {breakingBox}
@@ -113,7 +107,6 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <button data-testid="upgrade-open" onClick={() => { setAck(false); setConfirm(true) }} style={btn(true)}>Upgrade now</button>
-                {settings.changelog_url && <a href={settings.changelog_url} target="_blank" rel="noreferrer" style={{ color: c.link, textDecoration: 'none' }}>Release notes ↗</a>}
                 <span style={{ flex: 1 }} />
                 {!dismissed && <span data-testid="update-dismiss" className="dc-hoverink" style={{ color: c.muted, cursor: 'pointer' }} onClick={onDismiss}>Remind me later</span>}
               </div>
@@ -127,7 +120,7 @@ export function VersionPill({ settings, dismissed, onDismiss, upg, startUpgrade,
         data-version={version}
         className="dc-hoverborder"
         onClick={() => setOpen((o) => !o)}
-        title="Version, release notes and upgrades"
+        title={t('Version, release notes and upgrades')}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '3px 10px', borderRadius: 999, border: `1px solid ${failed ? c.bad : c.border}`, background: c.panel, color: failed ? c.bad : c.muted, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,.06)', userSelect: 'none' }}>
         {showDot && <span data-testid="version-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: c.good, flexShrink: 0 }} />}
         <span style={{ ...mono, fontSize: 11.5 }}>{pillText}</span>

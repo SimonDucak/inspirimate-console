@@ -15,7 +15,8 @@ import { Icon, IconName } from './design/Icon'
 import { confirmLeaveWorkspace } from './unsavedChanges'
 import { VersionPill } from './VersionPill'
 import { Login, CreatePassword } from './AuthGate'
-import brandLogo from './inspirimate-logo.png'
+import { BrandMark } from './BrandMark'
+import { applyLocale, useT } from './i18n'
 
 function readRoute(): Route {
   const parts = location.hash.replace(/^#\/?/, '').split('/')
@@ -38,6 +39,7 @@ type Route =
   | { name: 'app'; id: string; tab?: string; task?: string }
 
 export default function App() {
+  const t = useT()
   const [route, setRouteState] = useState<Route>(readRoute)
   const routeRef = useRef(route)
   routeRef.current = route
@@ -124,6 +126,9 @@ export default function App() {
   // On mount: resolve auth state, and register the 401 hook so an expired session
   // bounces back to the gate. Only load apps once we know we're allowed through.
   useEffect(() => {
+    api.getSettings().then((s) => applyLocale(s.locale)).catch(() => {})
+  }, [])
+  useEffect(() => {
     refreshAuth()
     setOnUnauthorized(() => {
       setAuth((a) => (a ? { ...a, authenticated: false } : a))
@@ -138,6 +143,7 @@ export default function App() {
   const loadSettings = useCallback(
     () =>
       api.getSettings().then((s) => {
+        applyLocale(s.locale)
         setSettings(s)
         setUpdDismissed(
           !!s.latest_version && localStorage.getItem('sandboxd-update-dismissed') === s.latest_version,
@@ -217,10 +223,10 @@ export default function App() {
   const goApp = (id: string, tab?: string) => setRoute({ name: 'app', id, tab })
 
   const nav = [
-    { key: 'apps', label: 'Build & projects', icon: 'grid' },
-    { key: 'brain', label: 'Project memory', icon: 'book' },
-    { key: 'store', label: 'App library', icon: 'box' },
-    { key: 'settings', label: 'Settings', icon: 'settings' },
+    { key: 'apps', label: t('Build & projects'), icon: 'grid' },
+    { key: 'brain', label: t('Project memory'), icon: 'book' },
+    { key: 'store', label: t('App library'), icon: 'box' },
+    { key: 'settings', label: t('Settings'), icon: 'settings' },
   ]
 
   // Auth gate — render before the app chrome. null = still resolving status.
@@ -237,7 +243,7 @@ export default function App() {
           fontFamily: font.sans,
         }}
       >
-        Loading…
+        {t('Loading…')}
       </div>
     )
   }
@@ -251,14 +257,11 @@ export default function App() {
         <div className="reachability-hint" data-testid="public-url-hint">
           <Icon name="external" size={14} />
           <span>
-            {reach === 'lan' ? 'Preview links are available on your network.' : 'Preview links use HTTP.'}{' '}
-            <a href="https://sandboxd.io/guides/production-tls" target="_blank" rel="noreferrer">
-              Configure public sharing ↗
-            </a>
+            {reach === 'lan' ? t('Preview links are available on your network.') : t('Preview links use HTTP.')}
           </span>
           <button
             className="icon-button"
-            aria-label="Dismiss sharing notice"
+            aria-label={t('Dismiss sharing notice')}
             data-testid="public-url-hint-dismiss"
             onClick={() => {
               localStorage.setItem('sandboxd-public-url-hint', 'dismissed')
@@ -270,13 +273,13 @@ export default function App() {
         </div>
       )}
       <header className="mobile-bar">
-        <button className="icon-button" aria-label="Open navigation" onClick={() => setMobileNav(true)}>
+        <button className="icon-button" aria-label={t('Open navigation')} onClick={() => setMobileNav(true)}>
           <Icon name="menu" />
         </button>
-        <strong>Inspirimate</strong>
+        <BrandMark />
         <button
           className="icon-button"
-          aria-label="Search projects and commands"
+          aria-label={t('Search projects and commands')}
           onClick={() => setPaletteOpen(true)}
         >
           <Icon name="search" />
@@ -286,14 +289,14 @@ export default function App() {
         {mobileNav && (
           <button
             className="nav-backdrop"
-            aria-label="Close navigation"
+            aria-label={t('Close navigation')}
             onClick={() => setMobileNav(false)}
           />
         )}
         <aside className={`studio-sidebar ${mobileNav ? 'is-open' : ''}`}>
           <button className="studio-brand" onClick={() => setRoute({ name: 'apps' })}>
-            <img className="brand-logo" src={brandLogo} alt="Inspirimate" />
-            <small>BUILD SOMETHING YOURS</small>
+            <BrandMark />
+            <small>{t('BUILD SOMETHING YOURS')}</small>
           </button>
           <button
             className="sidebar-new"
@@ -303,11 +306,11 @@ export default function App() {
             }}
           >
             <Icon name="plus" size={18} />
-            <span>New project</span>
+            <span>{t('New project')}</span>
           </button>
           <button className="sidebar-search" onClick={() => setPaletteOpen(true)}>
             <Icon name="search" size={16} />
-            <span>Quick search</span>
+            <span>{t('Quick search')}</span>
             <kbd>⌘ K</kbd>
           </button>
           <nav aria-label="Main navigation">
@@ -326,7 +329,7 @@ export default function App() {
             ))}
           </nav>
           <div className="sidebar-projects">
-            <div className="sidebar-caption">RECENT PROJECTS</div>
+            <div className="sidebar-caption">{t('RECENT PROJECTS')}</div>
             {apps.slice(0, 7).map((a) => (
               <button
                 key={a.id}
@@ -342,32 +345,18 @@ export default function App() {
                 <span>{a.name}</span>
               </button>
             ))}
-            {!apps.length && <p>Your next idea starts here.</p>}
+            {!apps.length && <p>{t('Your next idea starts here.')}</p>}
           </div>
           <footer className="sidebar-footer">
-            <a href="https://sandboxd.io" target="_blank" rel="noreferrer">
-              <Icon name="book" size={16} />
-              <span>Documentation</span>
-              <Icon name="external" size={12} />
-            </a>
-            <a
-              href="https://github.com/tastyeffectco/sandboxd/discussions"
-              target="_blank"
-              rel="noreferrer"
-              data-testid="nav-feedback"
-            >
-              <Icon name="code" size={16} />
-              <span>Community & feedback</span>
-            </a>
             {auth.enabled && (
               <button onClick={logout} data-testid="nav-logout">
                 <Icon name="logout" size={16} />
-                <span>Sign out</span>
+                <span>{t('Sign out')}</span>
               </button>
             )}
             <div className="instance-label">
               <span className="brand-dot" />
-              Self-hosted workspace
+              {t('Self-hosted workspace')}
             </div>
             {settings && (
               <VersionPill
@@ -467,7 +456,7 @@ export default function App() {
               key={t.id}
               style={{
                 background: c.ink,
-                color: '#062117',
+                color: '#141414',
                 borderRadius: 8,
                 padding: '10px 16px',
                 fontSize: 12.5,
@@ -673,9 +662,10 @@ function BrainOverview({ apps, onOpen }: { apps: TApp[]; onOpen: (id: string) =>
 }
 
 function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo: (r: Route) => void }) {
+  const t = useT()
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState(0)
-  const commands: { label: string; route: Route }[] = [
+  const commands: { label: string; route: Route; raw?: boolean }[] = [
     { label: 'Build a new project', route: { name: 'apps' } },
     { label: 'Explore the app library', route: { name: 'store' } },
     { label: 'Project memory', route: { name: 'brain' } },
@@ -684,15 +674,19 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
     { label: 'Git credentials', route: { name: 'settings', section: 'git' } },
     { label: 'Supabase connections', route: { name: 'settings', section: 'supabase' } },
     { label: 'Security & API keys', route: { name: 'settings', section: 'access' } },
-    ...apps.map((a) => ({ label: a.name, route: { name: 'app', id: a.id } as Route })),
+    ...apps.map((a) => ({ label: a.name, raw: true, route: { name: 'app', id: a.id } as Route })),
   ]
-  const items = commands.filter((c) => c.label.toLowerCase().includes(q.trim().toLowerCase()))
+  const items = commands.filter((c) => {
+    const shown = (c.raw ? c.label : t(c.label)).toLowerCase()
+    const qn = q.trim().toLowerCase()
+    return shown.includes(qn) || c.label.toLowerCase().includes(qn)
+  })
   return (
-    <Dialog title="Jump to…" close={close}>
+    <Dialog title={t('Jump to…')} close={close}>
       <Input
         autoFocus
-        aria-label="Search projects and commands"
-        placeholder="Search projects, settings, tools…"
+        aria-label={t('Search projects and commands')}
+        placeholder={t('Search projects, settings, tools…')}
         value={q}
         onChange={(e) => {
           setQ(e.target.value)
@@ -718,10 +712,10 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
         {items.map((c, i) => (
           <button key={c.label} className={i === selected ? 'selected' : ''} onClick={() => onGo(c.route)}>
             <Icon name={c.route.name === 'app' ? 'code' : 'arrow'} size={16} />
-            {c.label}
+            {c.raw ? c.label : t(c.label)}
           </button>
         ))}
-        {items.length === 0 && <p role="status">No matching projects or commands.</p>}
+        {items.length === 0 && <p role="status">{t('No matching projects or commands.')}</p>}
       </div>
       <p className="field-help">↑ ↓ to choose · Enter to open · Esc to close</p>
     </Dialog>

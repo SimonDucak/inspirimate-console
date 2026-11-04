@@ -27,15 +27,9 @@
 .desktop-wordmark {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 13px;
-  font-weight: 600;
 }
-.desktop-wordmark small {
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: #b5bab4;
-  font-weight: 500;
+.desktop-wordmark .brand-wordmark {
+  font-size: 1.05rem;
 }
 .desktop-titlebar button {
   -webkit-app-region: no-drag;
@@ -234,7 +228,7 @@
 .desktop-connection-modes button[aria-pressed='true'] {
   background: var(--accent-soft);
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px #8ed9be22;
+  box-shadow: 0 0 0 2px #d85a0022;
 }
 .desktop-connection-modes strong {
   font-size: 13px;

@@ -7,6 +7,7 @@ import { AgentConnection, ConnectMode } from './AgentConnection'
 import { ModelProviders } from './ModelProviders'
 import { SupabaseConnections } from './SupabaseConnections'
 import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKeys'
+import { applyLocale, useT } from './i18n'
 
 // --- source badges: every value on this page is one of these ----------------
 // editable  → change it here, saved live via PATCH /v1/settings
@@ -15,6 +16,7 @@ import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKey
 // derived   → computed by the server from other values
 type SrcKind = 'editable' | 'managed' | 'derived' | 'build'
 function Src({ env, kind }: { env?: string; kind?: SrcKind }) {
+  const t = useT()
   const base = {
     ...mono,
     fontSize: 10,
@@ -26,20 +28,20 @@ function Src({ env, kind }: { env?: string; kind?: SrcKind }) {
   if (kind === 'editable')
     return (
       <span style={{ ...base, color: c.good, background: `${c.good}14`, border: `1px solid ${c.good}40` }}>
-        editable
+        {t('editable')}
       </span>
     )
   if (env)
     return (
       <span
-        title={`Set the ${env} environment variable at deploy time, then restart`}
+        title={t('Set the {env} environment variable at deploy time, then restart', { env })}
         style={{ ...base, color: c.muted, background: c.panel2 }}
       >
         env · {env}
       </span>
     )
   const label = kind === 'managed' ? 'managed' : kind === 'derived' ? 'derived' : 'build'
-  return <span style={{ ...base, color: c.muted2, background: c.panel2 }}>{label}</span>
+  return <span style={{ ...base, color: c.muted2, background: c.panel2 }}>{t(label)}</span>
 }
 
 // One read-only instance field: label · value · where it comes from.
@@ -54,6 +56,7 @@ function Field({
   env?: string
   kind?: SrcKind
 }) {
+  const t = useT()
   return (
     <div
       style={{
@@ -66,7 +69,7 @@ function Field({
         fontSize: 12.5,
       }}
     >
-      <span style={{ color: c.muted }}>{label}</span>
+      <span style={{ color: c.muted }}>{t(label)}</span>
       <span style={{ ...mono, fontSize: 11.5, color: c.fg2, overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {value}
       </span>
@@ -98,6 +101,7 @@ export function SettingsView({
   onError: (m: string) => void
   toast: (m: string) => void
 }) {
+  const t = useT()
   const [section, setSection] = useState<string>(
     SECTIONS.some((s) => s.id === initialSection) ? initialSection! : 'models',
   )
@@ -161,25 +165,26 @@ export function SettingsView({
         {error ? (
           <div role="alert" className="inline-error">
             {error}
-            <Btn onClick={load}>Retry settings</Btn>
+            <Btn onClick={load}>{t('Retry settings')}</Btn>
           </div>
         ) : (
-          <p role="status">Loading settings…</p>
+          <p role="status">{t('Loading settings…')}</p>
         )}
       </div>
     )
+  const localeEditable = (s.editable || []).includes('locale')
   const lifecycleEditable = (s.editable || []).some((p) => p.startsWith('lifecycle.'))
   const modelsEditable = (s.editable || []).includes('agents.default_models')
   const selected = SECTIONS.find((p) => p.id === section)!
   return (
     <div className="settings-page">
       <header className="page-heading">
-        <div className="eyebrow">YOUR WORKSPACE, YOUR WAY</div>
-        <h1>Settings</h1>
-        <p>Connect your tools. Choose your models. Stay in control.</p>
+        <div className="eyebrow">{t('YOUR WORKSPACE, YOUR WAY')}</div>
+        <h1>{t('Settings')}</h1>
+        <p>{t('Connect your tools. Choose your models. Stay in control.')}</p>
       </header>
       <div className="settings-layout">
-        <nav className="settings-nav" aria-label="Settings sections">
+        <nav className="settings-nav" aria-label={t('Settings sections')}>
           {SECTIONS.map((p) => (
             <button
               key={p.id}
@@ -196,16 +201,16 @@ export function SettingsView({
             >
               <Icon name={p.icon} size={18} />
               <span>
-                <strong>{p.title}</strong>
-                <small>{p.note}</small>
+                <strong>{t(p.title)}</strong>
+                <small>{t(p.note)}</small>
               </span>
             </button>
           ))}
         </nav>
         <div className="settings-content">
           <div className="settings-section-heading">
-            <h2>{selected.title}</h2>
-            <p>{selected.note}</p>
+            <h2>{t(selected.title)}</h2>
+            <p>{t(selected.note)}</p>
           </div>
           {error && (
             <p role="alert" className="inline-error">
@@ -618,11 +623,32 @@ export function SettingsView({
           )}
           {section === 'instance' && (
             <div className="instance-settings">
+              <Card style={{ padding: 16, marginBottom: 12 }}>
+                <label className="form-field">
+                  {t('Language')}
+                  <select
+                    aria-label={t('Language')}
+                    value={s.locale === 'sk' ? 'sk' : 'en'}
+                    disabled={!localeEditable || busy}
+                    onChange={(e) => {
+                      const next = e.target.value === 'sk' ? 'sk' : 'en'
+                      void run(async () => {
+                        const updated = await api.patchSettings({ locale: next })
+                        setS(updated)
+                        applyLocale(updated.locale)
+                      }, t('Language saved'))
+                    }}
+                  >
+                    <option value="en">English</option>
+                    <option value="sk">Slovenčina</option>
+                  </select>
+                  <span className="field-help">{t('Language for everyone who opens this instance.')}</span>
+                </label>
+              </Card>
               <div className="info-banner">
                 <Icon name="settings" />
                 <p>
-                  These values are managed on the server. Environment badges show which deployment setting
-                  controls each value.
+                  {t('These values are managed on the server. Environment badges show which deployment setting controls each value.')}
                 </p>
               </div>
               <Card style={{ padding: '6px 16px 12px', marginBottom: 12 }}>
@@ -635,7 +661,7 @@ export function SettingsView({
                     padding: '12px 0 2px',
                   }}
                 >
-                  SYSTEM
+                  {t('SYSTEM')}
                 </div>
                 <Field
                   label="Version"
@@ -654,7 +680,7 @@ export function SettingsView({
                     padding: '16px 0 2px',
                   }}
                 >
-                  NETWORKING &amp; PREVIEWS
+                  {t('NETWORKING & PREVIEWS')}
                 </div>
                 <Field label="Preview domain" value={s.networking.preview_domain} env="PREVIEW_DOMAIN" />
                 <Field
@@ -679,7 +705,7 @@ export function SettingsView({
                   label="TLS"
                   value={
                     <Pill tone={s.networking.preview_tls ? 'good' : 'warn'}>
-                      {s.networking.preview_tls ? 'enabled' : 'plain HTTP'}
+                      {s.networking.preview_tls ? t('enabled') : t('plain HTTP')}
                     </Pill>
                   }
                   env="PREVIEW_TLS"
@@ -699,13 +725,13 @@ export function SettingsView({
                     padding: '16px 0 2px',
                   }}
                 >
-                  SECURITY
+                  {t('SECURITY')}
                 </div>
                 <Field
                   label="API auth"
                   value={
                     <Pill tone={s.auth.enabled ? 'good' : 'bad'}>
-                      {s.auth.enabled ? 'enabled' : 'disabled'}
+                      {s.auth.enabled ? t('enabled') : t('disabled')}
                     </Pill>
                   }
                   env="SANDBOXD_API_AUTH_DISABLED"
@@ -715,7 +741,7 @@ export function SettingsView({
                   value={<Pill tone="neutral">{s.egress.mode}</Pill>}
                   kind="build"
                 />
-                <Field label="Secrets key" value="set (never shown)" kind="managed" />
+                <Field label="Secrets key" value={t('set (never shown)')} kind="managed" />
               </Card>
               {s.agents.system_prompt && (
                 <Card style={{ padding: 16 }} data-testid="settings-system-prompt">

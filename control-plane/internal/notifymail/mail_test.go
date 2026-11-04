@@ -10,8 +10,8 @@ import (
 )
 
 func TestTaskNoticeOmitsSecretsAndIncludesTheProject(t *testing.T) {
-	subject, body := TaskNotice("Inspirimate", "succeeded", "add a login screen token=sbp_secret", "http://console.localhost:8080/#/app/abc")
-	if subject != "Coding finished: Inspirimate" {
+	subject, body := TaskNotice("Nakopávač", "succeeded", "add a login screen token=sbp_secret", "http://console.localhost:8080/#/app/abc")
+	if subject != "Coding finished: Nakopávač" {
 		t.Fatalf("subject %q", subject)
 	}
 	if !strings.Contains(body, "add a login screen token=sbp_secret") || !strings.Contains(body, "http://console.localhost:8080/#/app/abc") {
