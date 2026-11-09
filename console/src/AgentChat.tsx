@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, Agent, ModelProvider, Sandbox, TaskSummary } from './api'
 import { AgentPicker, BuildIntent, choiceBlocked, defaultChoice, preferredModel, withPreferred } from './AgentPicker'
-import { maxChatFileBytes, maxChatFiles, promptWithAttachments, splitAttachedPrompt, uploadPaths } from './chatAttachments'
+import {
+  isBinaryAsset,
+  isUnsupportedMedia,
+  maxChatFileBytes,
+  maxChatFiles,
+  promptWithAttachments,
+  splitAttachedPrompt,
+  uploadPaths,
+} from './chatAttachments'
 import { Btn } from './design/kit'
 import { Icon } from './design/Icon'
 import { AgentMessage } from './AgentMessage'
@@ -174,6 +182,10 @@ export function AgentChat({
         problem = `${file.name} is empty.`
         continue
       }
+      if (isUnsupportedMedia(file)) {
+        problem = `${file.name} is not a supported file. Attach a text file, or a JPG, PNG, or MP4.`
+        continue
+      }
       next.push(file)
     }
     setFiles(next)
@@ -198,8 +210,15 @@ export function AgentChat({
     try {
       const paths = uploadPaths(attached.map((file) => file.name))
       for (let i = 0; i < attached.length; i++) {
-        const content = await attached[i].text()
-        if (content.includes('\0')) throw new Error(`${attached[i].name} is not a text file. Attach a CSV or another text file.`)
+        const file = attached[i]
+        if (isBinaryAsset(file)) {
+          await api.putWorkspaceFile(sbID, paths[i], file)
+          continue
+        }
+        const content = await file.text()
+        if (content.includes('\0')) {
+          throw new Error(`${file.name} is not a supported file. Attach a text file, or a JPG, PNG, or MP4.`)
+        }
         await api.putWorkspaceFile(sbID, paths[i], content)
       }
       const taskPrompt = promptWithAttachments(prompt, paths)
@@ -303,7 +322,7 @@ export function AgentChat({
             </span>
             <h3>Let’s make it yours.</h3>
             <p>
-              Describe what to build or change. Attach up to two files, such as a CSV to seed a table. Your agent can edit files, install packages and run your app.
+              Describe what to build or change. Attach up to two files, such as a CSV, a logo, or a photo (JPG, PNG, or MP4). Your agent can edit files, install packages and run your app.
             </p>
             <div className="chat-suggestions">
               {[
@@ -463,7 +482,7 @@ export function AgentChat({
           >
             <Icon name="paperclip" size={16} />
           </button>
-          <span>Up to 2 files · Enter to send</span>
+          <span>Up to 2 files · text, JPG, PNG, or MP4 · Enter to send</span>
           {active ? (
             <Btn disabled={!active.id} onClick={() => void cancel()} type="button">
               Stop

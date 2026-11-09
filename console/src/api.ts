@@ -486,10 +486,11 @@ export const api = {
     } catch { /* no brain/ directory yet */ }
     return { hub, spokes }
   },
-  putWorkspaceFile: async (sandboxId: string, path: string, content: string): Promise<void> => {
+  putWorkspaceFile: async (sandboxId: string, path: string, content: string | Blob): Promise<void> => {
+    const binary = typeof content !== 'string'
     const res = await fetch(`/v1/sandboxes/${sandboxId}/files?path=${encodeURIComponent(path)}`, {
       method: 'PUT',
-      headers: { 'content-type': 'text/plain' },
+      headers: { 'content-type': binary ? 'application/octet-stream' : 'text/plain' },
       body: content,
     })
     if (!res.ok) {
