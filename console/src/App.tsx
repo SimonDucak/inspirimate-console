@@ -673,6 +673,7 @@ function Palette({ apps, close, onGo }: { apps: TApp[]; close: () => void; onGo:
     { label: 'Connect a coding agent', route: { name: 'settings', section: 'agents' } },
     { label: 'Git credentials', route: { name: 'settings', section: 'git' } },
     { label: 'Supabase connections', route: { name: 'settings', section: 'supabase' } },
+    { label: 'Firebase distribution', route: { name: 'settings', section: 'firebase' } },
     { label: 'Security & API keys', route: { name: 'settings', section: 'access' } },
     ...apps.map((a) => ({ label: a.name, raw: true, route: { name: 'app', id: a.id } as Route })),
   ]

@@ -200,6 +200,12 @@ type Server struct {
 	// Supabase proxies linked project connections for sandbox agents. Nil when
 	// the agent proxy is not running.
 	Supabase *supabaseproxy.Registry
+
+	// ApkExec runs `flutter build apk` inside the sandbox. Nil uses Docker.
+	// Tests inject a fake. apkMu guards apkRunning and the on-disk history.
+	ApkExec    apkExecer
+	apkMu      sync.Mutex
+	apkRunning map[string]string // sandbox id -> build id, while a build is in this process
 }
 
 // agentAuthBaseMount is the in-container parent dir under which each connected
@@ -278,6 +284,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/sandboxes/{id}/files/content", s.observe("GET /v1/sandboxes/{id}/files/content", s.v1FileContent))
 	mux.HandleFunc("PUT /v1/sandboxes/{id}/files", s.observe("PUT /v1/sandboxes/{id}/files", s.v1PutFile))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/export", s.observe("GET /v1/sandboxes/{id}/export", s.v1Export))
+	mux.HandleFunc("GET /v1/sandboxes/{id}/apk-builds", s.observe("GET /v1/sandboxes/{id}/apk-builds", s.v1ListApkBuilds))
+	mux.HandleFunc("POST /v1/sandboxes/{id}/apk-builds", s.observe("POST /v1/sandboxes/{id}/apk-builds", s.v1StartApkBuild))
+	mux.HandleFunc("GET /v1/sandboxes/{id}/apk-builds/latest", s.observe("GET /v1/sandboxes/{id}/apk-builds/latest", s.v1DownloadApk))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/processes/{name}/logs", s.observe("GET /v1/sandboxes/{id}/processes/{name}/logs", s.v1ProcessLogs))
 	mux.HandleFunc("GET /v1/sandboxes/{id}/terminal", s.observe("GET /v1/sandboxes/{id}/terminal", s.v1Terminal))
 

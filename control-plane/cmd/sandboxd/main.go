@@ -621,6 +621,9 @@ func main() {
 	// Finalize any coding task left `running` by a previous sandboxd
 	// run before the idle reaper (which trusts the task table) starts.
 	server.ReconcileTasks(ctx)
+	// APK builds don't survive a restart; mark leftover "running" rows failed
+	// so the Deployment tab does not wait on a build that is gone.
+	server.ReconcileApkBuilds()
 
 	// Phase 5 — after reconcile, if MemAvailable is
 	// already below the healthy floor, run one synchronous pressure

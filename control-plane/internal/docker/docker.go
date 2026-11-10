@@ -297,6 +297,48 @@ func (c *Client) Exec(ctx context.Context, name string, cmd []string) (ExecResul
 	return res, err
 }
 
+// tailBuf keeps only the last max bytes written to it so a long command
+// (a Flutter APK build) cannot fill memory with its log.
+type tailBuf struct {
+	max int
+	buf []byte
+}
+
+func (b *tailBuf) Write(p []byte) (int, error) {
+	if b.max <= 0 {
+		return len(p), nil
+	}
+	b.buf = append(b.buf, p...)
+	if len(b.buf) > b.max {
+		b.buf = append([]byte(nil), b.buf[len(b.buf)-b.max:]...)
+	}
+	return len(p), nil
+}
+
+func (b *tailBuf) String() string { return string(b.buf) }
+
+// ExecTail is Exec, but stdout and stderr are each capped to maxOutput bytes
+// (the tail). maxOutput <= 0 discards the streams.
+func (c *Client) ExecTail(ctx context.Context, name string, cmd []string, maxOutput int) (ExecResult, error) {
+	args := append([]string{"exec", name}, cmd...)
+	cmdEx := exec.CommandContext(ctx, c.Bin, args...)
+	stdout := &tailBuf{max: maxOutput}
+	stderr := &tailBuf{max: maxOutput}
+	cmdEx.Stdout = stdout
+	cmdEx.Stderr = stderr
+	err := cmdEx.Run()
+	res := ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: 0}
+	if err == nil {
+		return res, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		res.ExitCode = exitErr.ExitCode()
+		return res, nil
+	}
+	return res, err
+}
+
 // ExecTTY starts an INTERACTIVE command in the named container over a PTY and
 // returns the PTY master + the running *exec.Cmd. `-i -t` gives the in-container
 // process a real terminal; user/workdir scope it (e.g. uid-1000 "sandbox" in the

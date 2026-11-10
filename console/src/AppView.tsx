@@ -21,6 +21,9 @@ import { useUnsavedChanges } from './unsavedChanges'
 import { VersionsPanel } from './VersionsPanel'
 import { SecretsPanel } from './SecretsPanel'
 import { DeployModal } from './DeployModal'
+import { DeployTab } from './DeployTab'
+import { DeploymentTab } from './DeploymentTab'
+import { isFlutterApp, projectJsonPath, projectJsonWithFlutter, pubspecIsFlutter } from './flutter'
 import { slugKey, splitInline } from './brain'
 import { fitPreviewScale, previewPhone, previewPhones, type PreviewPhoneId } from './previewDevices'
 
@@ -34,11 +37,13 @@ const TABS = [
   'files',
   'terminal',
   'git',
+  'deploy',
   'config',
   'snapshots',
   'brain',
   'runtime',
   'activity',
+  'deployment',
 ] as const
 type Tab = (typeof TABS)[number]
 
@@ -239,6 +244,9 @@ export function AppView({
   }, [initialTab])
   const [applied, setApplied] = useState<{ preset: string } | null>(null) // auto-applied runtime banner (Undo)
   const [deployOpen, setDeployOpen] = useState(false)
+  const [flutterOn, setFlutterOn] = useState(false)
+  const [flutterDetected, setFlutterDetected] = useState(false)
+  const [flutterReady, setFlutterReady] = useState(false)
   const autoRef = useRef<string>('') // guards one auto-apply attempt per sandbox
 
   const refresh = useCallback(async () => {
@@ -304,6 +312,60 @@ export function AppView({
       .finally(() => setPreparing(false))
   }, [app?.git, sb, applyRuntime])
 
+  useEffect(() => {
+    if (!sb?.id) {
+      setFlutterDetected(false)
+      setFlutterOn(false)
+      setFlutterReady(true)
+      return
+    }
+    let cancel = false
+    setFlutterReady(false)
+    Promise.all([
+      api.getWorkspaceFile(sb.id, 'pubspec.yaml').catch(() => null),
+      api.getWorkspaceFile(sb.id, projectJsonPath).catch(() => null),
+    ])
+      .then(([pubspec, project]) => {
+        if (cancel) return
+        setFlutterDetected(pubspecIsFlutter(pubspec))
+        setFlutterOn(isFlutterApp(pubspec, project))
+      })
+      .catch(() => {
+        if (!cancel) {
+          setFlutterDetected(false)
+          setFlutterOn(false)
+        }
+      })
+      .finally(() => {
+        if (!cancel) setFlutterReady(true)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [sb?.id])
+
+  const setFlutterFlag = useCallback(
+    async (on: boolean) => {
+      if (!sb?.id) return
+      try {
+        const current = await api.getWorkspaceFile(sb.id, projectJsonPath).catch(() => null)
+        await api.putWorkspaceFile(sb.id, projectJsonPath, projectJsonWithFlutter(current, on))
+        setFlutterOn(flutterDetected || on)
+        toast(t('Flutter setting saved'))
+      } catch (e) {
+        onError((e as Error).message)
+      }
+    },
+    [sb?.id, flutterDetected, toast, t, onError],
+  )
+
+  useEffect(() => {
+    if (flutterReady && !flutterOn && tabName === 'deployment') {
+      setTabName('overview')
+      history.replaceState(null, '', `#/app/${encodeURIComponent(appId)}/overview`)
+    }
+  }, [flutterReady, flutterOn, tabName, appId])
+
   const undoRuntime = useCallback(async () => {
     if (!sb) return
     setBusy(true)
@@ -345,10 +407,13 @@ export function AppView({
     config: t('Secrets & variables'),
     snapshots: t('Versions'),
     brain: t('Project memory'),
+    deploy: t('Deploy'),
     runtime: t('Runtime'),
     activity: t('Activity'),
+    deployment: t('Deployment'),
   }
-  const primary = ['overview', 'files', 'terminal', 'git'] as Tab[]
+  const primary: Tab[] = ['overview', 'files', 'terminal', 'git', 'deploy']
+  if (flutterOn) primary.push('deployment')
   return (
     <div className="app-workspace">
       <header className="workspace-header">
@@ -451,6 +516,14 @@ export function AppView({
                 }}
               >
                 Supabase connection
+              </button>
+              <button
+                onClick={() => {
+                  goSettings('firebase')
+                  setMenu(false)
+                }}
+              >
+                {t('Firebase distribution')}
               </button>
               <button
                 onClick={() => {
@@ -567,7 +640,11 @@ export function AppView({
                         ? 'code'
                         : t === 'terminal'
                           ? 'terminal'
-                          : 'git'
+                          : t === 'deploy'
+                            ? 'arrow'
+                            : t === 'deployment'
+                              ? 'box'
+                              : 'git'
                   }
                   size={15}
                 />
@@ -580,7 +657,7 @@ export function AppView({
                 <Icon name="chevron" size={13} />
               </summary>
               <div>
-                {TABS.filter((t) => !primary.includes(t)).map((t) => (
+                {TABS.filter((t) => !primary.includes(t) && (t !== 'deployment' || flutterOn)).map((t) => (
                   <button
                     key={t}
                     data-testid={`tab-${t}`}
@@ -607,6 +684,10 @@ export function AppView({
                 />
                 <RuntimeCard
                   appId={app.id}
+                  sandboxId={sb?.id}
+                  flutterDetected={flutterDetected}
+                  flutterOn={flutterOn}
+                  onFlutterFlag={(on) => void setFlutterFlag(on)}
                   onApplyRuntime={() => sb && applyRuntime(sb.id, { auto: false })}
                   canApply={status === 'running'}
                 />
@@ -631,6 +712,16 @@ export function AppView({
             )}
             {tabName === 'git' && (
               <GitTab appId={appId} onError={onError} toast={toast} goSettings={goSettings} />
+            )}
+            {(tabName === 'deploy' || visited.has('deploy')) && (
+              <div hidden={tabName !== 'deploy'}>
+                <DeployTab sb={sb} onError={onError} toast={toast} />
+              </div>
+            )}
+            {flutterOn && (tabName === 'deployment' || visited.has('deployment')) && (
+              <div hidden={tabName !== 'deployment'}>
+                <DeploymentTab sb={sb} onError={onError} toast={toast} />
+              </div>
             )}
             {tabName === 'config' && <SecretsPanel appId={appId} onError={onError} toast={toast} />}
             {(tabName === 'terminal' || visited.has('terminal')) && (
@@ -1533,13 +1624,22 @@ function ProcessesCard({
 
 function RuntimeCard({
   appId,
+  sandboxId,
+  flutterDetected,
+  flutterOn,
+  onFlutterFlag,
   onApplyRuntime,
   canApply,
 }: {
   appId: string
+  sandboxId?: string
+  flutterDetected: boolean
+  flutterOn: boolean
+  onFlutterFlag: (on: boolean) => void
   onApplyRuntime: () => void
   canApply: boolean
 }) {
+  const t = useT()
   const [eff, setEff] = useState<{ command?: string; port?: number; health?: string } | null>(null)
   const [valid, setValid] = useState<boolean | null>(null)
   const [present, setPresent] = useState(false)
@@ -1613,6 +1713,21 @@ function RuntimeCard({
           </Btn>
         </div>
       )}
+      <label className="deployment-flag">
+        <input
+          type="checkbox"
+          data-testid="flutter-flag"
+          checked={flutterOn}
+          disabled={!sandboxId || flutterDetected}
+          onChange={(e) => onFlutterFlag(e.target.checked)}
+        />
+        <span>{t('This is a Flutter app')}</span>
+      </label>
+      <p className="deploy-help">
+        {flutterDetected
+          ? t('Detected from pubspec.yaml.')
+          : t('Turn this on when pubspec.yaml does not show a Flutter project.')}
+      </p>
     </Card>
   )
 }

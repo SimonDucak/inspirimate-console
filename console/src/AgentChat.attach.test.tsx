@@ -65,7 +65,7 @@ describe('chat file attachments', () => {
     expect(screen.getByText('Seed the nutrients table from this file.')).toBeTruthy()
   })
 
-  it('uploads a PNG as the file itself and refuses an unsupported video', async () => {
+  it('uploads a PNG and a keystore as the original file', async () => {
     vi.clearAllMocks()
     vi.stubGlobal(
       'EventSource',
@@ -94,16 +94,22 @@ describe('chat file attachments', () => {
     expect(api.putWorkspaceFile).toHaveBeenCalledWith('sb', 'uploads/logo.png', logo)
     const prompt = vi.mocked(api.submitTask).mock.calls.at(-1)?.[1] as string
     expect(prompt).toContain('uploads/logo.png')
-    expect(prompt).toContain('copy them into the site')
+    expect(prompt).toContain('copied as-is')
     expect(prompt).toContain('Put this logo in the header.')
 
     unmount()
     cleanup()
+    vi.clearAllMocks()
     render(<AgentChat sb={sandbox} onError={noop} toast={noop} refresh={noop} goSettings={noop} />)
-    fireEvent.change(screen.getByTestId('task-file'), {
-      target: { files: [new File(['webm'], 'clip.webm', { type: 'video/webm' })] },
+    const keystore = new File([new Uint8Array([0x00, 0xfe, 0xed])], 'upload-keystore.jks', {
+      type: 'application/octet-stream',
     })
-    expect(screen.getByText('clip.webm is not a supported file. Attach a text file, or a JPG, PNG, or MP4.')).toBeTruthy()
-    expect(screen.queryByText('clip.webm')).toBeNull()
+    fireEvent.change(screen.getByTestId('task-file'), { target: { files: [keystore] } })
+    expect(screen.getByText('upload-keystore.jks')).toBeTruthy()
+    fireEvent.change(screen.getByTestId('task-prompt'), { target: { value: 'Put the keystore in android.' } })
+    await waitFor(() => expect((screen.getByTestId('task-send') as HTMLButtonElement).disabled).toBe(false))
+    screen.getByTestId('task-prompt').closest('form')!.requestSubmit()
+    await waitFor(() => expect(api.submitTask).toHaveBeenCalled())
+    expect(api.putWorkspaceFile).toHaveBeenCalledWith('sb', 'uploads/upload-keystore.jks', keystore)
   })
 })

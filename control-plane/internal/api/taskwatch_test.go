@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,20 +68,7 @@ const (
 // plus the sandbox/task ids.
 func fakeRuntimed(t *testing.T, events []fakeEvent) (*Server, string, string) {
 	t.Helper()
-	root := t.TempDir()
-	sandboxID, taskID := testSandboxID, testTaskID
-
-	sockDir := filepath.Join(root, sandboxID, ".runtimed")
-	if err := os.MkdirAll(sockDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	ln, err := net.Listen("unix", filepath.Join(sockDir, "sock"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /tasks/{id}/events", func(w http.ResponseWriter, r *http.Request) {
+	return fakeRuntimedFn(t, func(w http.ResponseWriter, r *http.Request) {
 		fl, _ := w.(http.Flusher)
 		enc := json.NewEncoder(w)
 		for _, e := range events {
@@ -100,6 +88,24 @@ func fakeRuntimed(t *testing.T, events []fakeEvent) (*Server, string, string) {
 		}
 		<-r.Context().Done() // hold open like a live task until the client gives up
 	})
+}
+
+func fakeRuntimedFn(t *testing.T, handle func(http.ResponseWriter, *http.Request)) (*Server, string, string) {
+	t.Helper()
+	root := t.TempDir()
+	sandboxID, taskID := testSandboxID, testTaskID
+
+	sockDir := filepath.Join(root, sandboxID, ".runtimed")
+	if err := os.MkdirAll(sockDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("unix", filepath.Join(sockDir, "sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tasks/{id}/events", handle)
 	srv := &http.Server{Handler: mux}
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Close() })
@@ -170,5 +176,67 @@ func TestWatchTaskFailsWhenSilentPastWindow(t *testing.T) {
 	}
 	if got.Status != string(runtime.TaskFailed) {
 		t.Errorf("task status = %q; want %q", got.Status, runtime.TaskFailed)
+	}
+}
+
+// A dropped stream is not a failed task when the sandbox is still up.
+// The watcher reconnects and keeps the real terminal result.
+func TestWatchTaskReconnectsAfterDroppedStream(t *testing.T) {
+	var hits atomic.Int32
+	s, sandboxID, taskID := fakeRuntimedFn(t, func(w http.ResponseWriter, r *http.Request) {
+		n := hits.Add(1)
+		fl, _ := w.(http.Flusher)
+		enc := json.NewEncoder(w)
+		if n < 5 {
+			_ = enc.Encode(statusEvent())
+			return
+		}
+		_ = enc.Encode(doneEvent(testTaskID, runtime.TaskSucceeded))
+		if fl != nil {
+			fl.Flush()
+		}
+		<-r.Context().Done()
+	})
+	if err := s.Store.Create(context.Background(), &store.Sandbox{
+		ID: sandboxID, Status: "running", Image: "sandboxd-base:0.3.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.watchTaskWindow(sandboxID, taskID, 20*time.Second)
+
+	got, err := s.Store.GetTask(context.Background(), taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != string(runtime.TaskSucceeded) {
+		t.Errorf("task status = %q; want %q after %d streams", got.Status, runtime.TaskSucceeded, hits.Load())
+	}
+}
+
+// If the stream dies after runtimed has already written result.json, that
+// file is the task outcome. The watcher must not replace it with the
+// "no terminal event" failure.
+func TestWatchTaskUsesResultFileWhenStreamEnds(t *testing.T) {
+	s, sandboxID, taskID := fakeRuntimedFn(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(statusEvent())
+	})
+	dir := filepath.Join(s.Loopback.Root, sandboxID, ".runtimed", "tasks", taskID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(runtime.TaskResult{
+		ID: taskID, Status: runtime.TaskSucceeded, FilesChanged: []string{},
+	})
+	if err := os.WriteFile(filepath.Join(dir, "result.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.watchTaskWindow(sandboxID, taskID, 3*time.Second)
+
+	got, err := s.Store.GetTask(context.Background(), taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != string(runtime.TaskSucceeded) {
+		t.Errorf("task status = %q; want the result.json status %q", got.Status, runtime.TaskSucceeded)
 	}
 }

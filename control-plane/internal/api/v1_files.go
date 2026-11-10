@@ -23,7 +23,7 @@ const (
 
 // excludedFromFiles are never listed, read, or exported.
 var excludedFromFiles = map[string]bool{
-	"node_modules": true, ".git": true, "dist": true, ".vite": true,
+	"node_modules": true, ".git": true, "dist": true, ".vite": true, ".sandboxd": true,
 }
 
 func (s *Server) appDirFor(id string) string {

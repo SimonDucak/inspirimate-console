@@ -2,8 +2,8 @@ export const maxChatFiles = 2
 export const maxChatFileBytes = 25 * 1024 * 1024
 
 const attachmentLead = 'Attached project files (read these paths from the project, do not ask the user to paste them):'
-const attachmentLeadWithAssets =
-  'Attached project files (read these paths from the project, do not ask the user to paste them). JPG, PNG, and MP4 are assets: copy them into the site and reference them from the page. Read other files as text:'
+const attachmentLeadWithBytes =
+  'Attached project files (read these paths from the project, do not ask the user to paste them). Files saved as bytes must be copied as-is to the place the user names. Do not open those as text. JPG, PNG, and MP4 may also be used as site assets. Read text files as text:'
 const attachmentMark = '\n\n---\n\n'
 const binaryAssetExtensions = new Set(['jpg', 'jpeg', 'png', 'mp4'])
 const binaryAssetTypes = new Set(['image/jpeg', 'image/png', 'video/mp4'])
@@ -12,15 +12,14 @@ export function isBinaryAsset(file: { name: string; type?: string }): boolean {
   return binaryAssetExtensions.has(fileExtension(file.name)) || binaryAssetTypes.has((file.type || '').toLowerCase())
 }
 
-export function isUnsupportedMedia(file: { name: string; type?: string }): boolean {
+// Text stays text so the agent can read a CSV or note. Everything else,
+// including a keystore, is stored as the original bytes.
+export function uploadAsText(file: { name: string; type?: string }, decoded: string): boolean {
+  if (decoded.includes('\0')) return false
   if (isBinaryAsset(file)) return false
   const type = (file.type || '').toLowerCase()
-  // SVG is XML, so it stays on the text upload path.
-  if (type === 'image/svg+xml' || fileExtension(file.name) === 'svg') return false
-  if (type.startsWith('image/') || type.startsWith('video/') || type.startsWith('audio/')) return true
-  return ['gif', 'webp', 'bmp', 'heic', 'heif', 'tif', 'tiff', 'ico', 'webm', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'pdf', 'zip', 'gz', 'rar', '7z', 'exe', 'dmg', 'wasm'].includes(
-    fileExtension(file.name),
-  )
+  if (type.startsWith('image/') || type.startsWith('video/') || type.startsWith('audio/')) return false
+  return true
 }
 
 function fileExtension(name: string): string {
@@ -53,15 +52,16 @@ export function uploadPaths(names: string[]): string[] {
   })
 }
 
-export function promptWithAttachments(prompt: string, paths: string[]): string {
+export function promptWithAttachments(prompt: string, paths: string[], rawPaths: string[] = []): string {
   if (paths.length === 0) return prompt
-  const lead = paths.some((path) => isBinaryAsset({ name: path })) ? attachmentLeadWithAssets : attachmentLead
+  const raw = new Set(rawPaths)
+  const lead = paths.some((path) => raw.has(path) || isBinaryAsset({ name: path })) ? attachmentLeadWithBytes : attachmentLead
   const list = paths.map((path) => `- ${path}`).join('\n')
   return `${lead}\n${list}${attachmentMark}${prompt}`
 }
 
 export function splitAttachedPrompt(prompt: string): { text: string; files: string[] } {
-  const lead = [attachmentLeadWithAssets, attachmentLead].find((item) => prompt.startsWith(`${item}\n`))
+  const lead = [attachmentLeadWithBytes, attachmentLead].find((item) => prompt.startsWith(`${item}\n`))
   if (!lead) return { text: prompt, files: [] }
   const rest = prompt.slice(lead.length + 1)
   const at = rest.indexOf(attachmentMark)

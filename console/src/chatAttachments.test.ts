@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isBinaryAsset, isUnsupportedMedia, promptWithAttachments, safeUploadName, splitAttachedPrompt, uploadPaths } from './chatAttachments'
+import { isBinaryAsset, promptWithAttachments, safeUploadName, splitAttachedPrompt, uploadAsText, uploadPaths } from './chatAttachments'
 
 describe('chat attachments', () => {
   it('keeps a safe file name and drops path pieces', () => {
@@ -32,11 +32,13 @@ describe('chat attachments', () => {
     expect(isBinaryAsset({ name: 'clip.mp4', type: 'video/mp4' })).toBe(true)
     expect(isBinaryAsset({ name: 'photo', type: 'image/jpeg' })).toBe(true)
     expect(isBinaryAsset({ name: 'notes.txt', type: 'text/plain' })).toBe(false)
-    expect(isUnsupportedMedia({ name: 'clip.webm', type: 'video/webm' })).toBe(true)
-    expect(isUnsupportedMedia({ name: 'logo.svg', type: 'image/svg+xml' })).toBe(false)
+    expect(uploadAsText({ name: 'notes.txt', type: 'text/plain' }, 'hello')).toBe(true)
+    expect(uploadAsText({ name: 'upload-keystore.jks', type: 'application/octet-stream' }, 'key\0store')).toBe(false)
+    expect(uploadAsText({ name: 'clip.webm', type: 'video/webm' }, 'webm')).toBe(false)
+    expect(uploadAsText({ name: 'logo.svg', type: 'image/svg+xml' }, '<svg></svg>')).toBe(false)
 
     const sent = promptWithAttachments('Use this logo in the header.', ['uploads/logo.png'])
-    expect(sent).toContain('copy them into the site')
+    expect(sent).toContain('copied as-is')
     expect(splitAttachedPrompt(sent)).toEqual({
       text: 'Use this logo in the header.',
       files: ['uploads/logo.png'],

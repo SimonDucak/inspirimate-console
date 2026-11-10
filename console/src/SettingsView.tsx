@@ -6,6 +6,7 @@ import { Dialog } from './design/Dialog'
 import { AgentConnection, ConnectMode } from './AgentConnection'
 import { ModelProviders } from './ModelProviders'
 import { SupabaseConnections } from './SupabaseConnections'
+import { FirebaseDistribution } from './FirebaseDistribution'
 import { ApiKeyRow, ApiKeyAccessSelect, KeyAccess, accessScopes } from './ApiKeys'
 import { applyLocale, useT } from './i18n'
 
@@ -83,6 +84,7 @@ const SECTIONS = [
   { id: 'agents', title: 'Coding agents', note: 'Accounts, subscriptions and defaults', icon: 'spark' },
   { id: 'git', title: 'Git credentials', note: 'Connect private repositories', icon: 'git' },
   { id: 'supabase', title: 'Supabase connections', note: 'Project refs and access tokens', icon: 'box' },
+  { id: 'firebase', title: 'Firebase distribution', note: 'Android app id, service account, testers', icon: 'box' },
   { id: 'access', title: 'Security & API keys', note: 'Manage access to your instance', icon: 'lock' },
   {
     id: 'lifecycle',
@@ -219,6 +221,7 @@ export function SettingsView({
           )}
           {section === 'models' && <ModelProviders onError={onError} toast={toast} />}
           {section === 'supabase' && <SupabaseConnections toast={toast} />}
+          {section === 'firebase' && <FirebaseDistribution toast={toast} />}
           {section === 'agents' && (
             <>
               <div className="agent-accounts" data-testid="settings-agents-list">

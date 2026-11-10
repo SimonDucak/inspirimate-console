@@ -599,4 +599,22 @@ export const api = {
       'GET',
       `/v1/apps/${appId}/events?limit=${limit}`,
     ).then((r) => r.events || []),
+
+  // Android APK builds. History is metadata only; the bytes of every build
+  // except the latest success are deleted on the server.
+  listApkBuilds: (sandboxId: string) =>
+    req<{ builds: ApkBuild[] }>('GET', `/v1/sandboxes/${sandboxId}/apk-builds`).then((r) => r.builds || []),
+  startApkBuild: (sandboxId: string, version?: string) =>
+    req<ApkBuild>('POST', `/v1/sandboxes/${sandboxId}/apk-builds`, version ? { version } : {}),
+  apkDownloadUrl: (sandboxId: string) => `/v1/sandboxes/${sandboxId}/apk-builds/latest`,
+}
+
+export interface ApkBuild {
+  id: string
+  version?: string
+  status: 'running' | 'succeeded' | 'failed' | string
+  started_at: string
+  finished_at?: string
+  log?: string
+  downloadable?: boolean
 }

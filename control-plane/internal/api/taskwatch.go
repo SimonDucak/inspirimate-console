@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,14 +11,19 @@ import (
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/events"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/notifymail"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/runtime"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
 const (
 	// watchMargin is the slack the watcher keeps beyond the task's own
-	// timeout, so it is still streaming when runtimed emits the terminal
-	// `done` event — which, on a timeout, fires right at the deadline.
-	watchMargin       = 5 * time.Minute
+	// timeout. The agent deadline is not the end of the run: the build
+	// check and the preview restart use their own timers and only then
+	// emit `done`. Five minutes was short of a slow build, so the
+	// watcher gave up and reported a missing terminal event while
+	// runtimed was still finishing.
+	watchMargin       = 15 * time.Minute
 	taskWatchAttempts = 3
+	taskWatchRetry    = 2 * time.Second
 )
 
 // watchWindowFor is how long watchTask streams events before giving up.
@@ -67,49 +72,124 @@ func (s *Server) watchTaskWindow(sandboxID, taskID string, window time.Duration)
 	defer cancel()
 
 	rc := s.runtimeClientFor(sandboxID)
-	var body io.ReadCloser
-	var err error
-	for attempt := 1; ; attempt++ {
-		if body, err = rc.TaskEvents(ctx, taskID, 0); err == nil {
+	var result *runtime.TaskResult
+	var streamErr error
+	opened := false
+	connectFails := 0
+	gone := 0
+	for result == nil {
+		body, err := rc.TaskEvents(ctx, taskID, 0)
+		streamErr = err
+		if err == nil {
+			opened = true
+			connectFails = 0
+			_ = runtime.DecodeEvents(body, func(ev runtime.Event) bool {
+				if ev.Type == runtime.EventDone {
+					var tr runtime.TaskResult
+					if json.Unmarshal(ev.Data, &tr) == nil && tr.Status != "" {
+						result = &tr
+					}
+					return false
+				}
+				return true
+			})
+			body.Close()
+		} else {
+			connectFails++
+		}
+		if result != nil {
 			break
 		}
-		if attempt >= taskWatchAttempts {
-			log.Warn("task watcher: cannot reach runtimed; marking failed", "err", err.Error())
-			result := failedResult(taskID, "sandbox_unavailable", "task watcher could not reach runtimed")
-			s.finishWatchedTask(sandboxID, taskID, result)
-			s.notifyTaskDone(sandboxID, taskID, result)
-			return
+		// runtimed writes result.json as it emits `done`. A dropped
+		// stream can miss that event even though the task finished.
+		if tr, ok := s.taskResultOnDisk(sandboxID, taskID); ok {
+			result = tr
+			log.Info("task watcher: recovered result from disk")
+			break
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		// Never got a socket: give up quickly, as before. A sandbox
+		// that is gone will not grow a terminal event either. A
+		// sandbox that is still up gets the stream back; one blip
+		// used to fail the task outright.
+		if !opened && connectFails >= taskWatchAttempts {
+			log.Warn("task watcher: cannot reach runtimed; marking failed", "err", errText(streamErr))
+			result = failedResult(taskID, "sandbox_unavailable", "task watcher could not reach runtimed")
+			break
+		}
+		if !s.sandboxAppearsRunning(sandboxID) {
+			gone++
+			if gone >= taskWatchAttempts {
+				log.Warn("task watcher: cannot reach runtimed; marking failed", "err", errText(streamErr))
+				result = failedResult(taskID, "sandbox_unavailable", "task watcher could not reach runtimed")
+				break
+			}
+		} else {
+			gone = 0
+			log.Warn("task watcher: event stream dropped; reconnecting", "err", errText(streamErr))
 		}
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(taskWatchRetry):
 		case <-ctx.Done():
-			return
 		}
 	}
-	defer body.Close()
-
-	var result *runtime.TaskResult
-	_ = runtime.DecodeEvents(body, func(ev runtime.Event) bool {
-		if ev.Type == runtime.EventDone {
-			var tr runtime.TaskResult
-			if json.Unmarshal(ev.Data, &tr) == nil {
-				result = &tr
-			}
-			return false // terminal
-		}
-		return true
-	})
 	if result == nil {
-		log.Warn("task watcher: event stream ended without a terminal event")
-		result = failedResult(taskID, "internal", "task event stream ended without a terminal event")
-		s.finishWatchedTask(sandboxID, taskID, result)
-		s.notifyTaskDone(sandboxID, taskID, result)
-		return
+		if tr, ok := s.taskResultOnDisk(sandboxID, taskID); ok {
+			result = tr
+			log.Info("task watcher: recovered result from disk")
+		} else {
+			log.Warn("task watcher: event stream ended without a terminal event")
+			result = failedResult(taskID, "internal", "task event stream ended without a terminal event")
+		}
 	}
 	s.finishWatchedTask(sandboxID, taskID, result)
 	s.notifyTaskDone(sandboxID, taskID, result)
-	log.Info("task watcher: result persisted", "status", result.Status)
+	if result.FailureReason == "" {
+		log.Info("task watcher: result persisted", "status", result.Status)
+	}
+}
 
+// taskResultOnDisk reads the canonical result runtimed persists next to
+// the event log. Missing or unreadable files are not a result.
+func (s *Server) taskResultOnDisk(sandboxID, taskID string) (*runtime.TaskResult, bool) {
+	if s.Loopback == nil {
+		return nil, false
+	}
+	_, mnt := s.Loopback.Paths(sandboxID)
+	raw, err := os.ReadFile(filepath.Join(mnt, ".runtimed", "tasks", taskID, "result.json"))
+	if err != nil {
+		return nil, false
+	}
+	var tr runtime.TaskResult
+	if json.Unmarshal(raw, &tr) != nil || tr.Status == "" {
+		return nil, false
+	}
+	return &tr, true
+}
+
+// sandboxAppearsRunning reports whether the sandbox row is still running.
+// A missing row is not running. A lookup error is treated as running so a
+// brief database failure does not fail a live task.
+func (s *Server) sandboxAppearsRunning(sandboxID string) bool {
+	if s.Store == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	sb, err := s.Store.Get(ctx, sandboxID)
+	if err != nil {
+		return !errors.Is(err, store.ErrNotFound)
+	}
+	return sb.Status == "running"
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // notifyTaskDone emails the project's saved addresses after a live task ends.
