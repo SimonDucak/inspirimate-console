@@ -30,6 +30,9 @@ type App struct {
 	// SupabaseConnectionID (0028) points at an owner-scoped supabase_connection.
 	// The token is never stored on the app.
 	SupabaseConnectionID sql.NullString
+	// FirebaseDistributionID (0033) points at an owner-scoped Firebase App
+	// Distribution connection. The service account is never stored on the app.
+	FirebaseDistributionID sql.NullString
 	// NotifyEmails (0030) are plain addresses emailed when a coding agent finishes.
 	NotifyEmails []string
 	// TaskTimeoutS (0031) is the per-project agent limit in seconds. 0 uses the
@@ -42,12 +45,13 @@ type App struct {
 // AppPatch carries the fields a PATCH may change; nil means "leave as-is".
 // An empty SupabaseConnectionID clears the link.
 type AppPatch struct {
-	Name                 *string
-	Description          *string
-	Tags                 *[]string
-	SupabaseConnectionID *string
-	NotifyEmails         *[]string
-	TaskTimeoutS         *int
+	Name                   *string
+	Description            *string
+	Tags                   *[]string
+	SupabaseConnectionID   *string
+	FirebaseDistributionID *string
+	NotifyEmails           *[]string
+	TaskTimeoutS           *int
 }
 
 func marshalTags(tags []string) string {
@@ -68,7 +72,7 @@ func scanApp(sc scanner) (*App, error) {
 	var emails string
 	err := sc.Scan(&a.ID, &a.OwnerToken, &a.ExternalUserID, &a.ExternalProjectID,
 		&a.Name, &a.Description, &tags, &a.LatestSnapshotID, &created, &updated, &a.RuntimePreset,
-		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &a.SupabaseConnectionID, &emails, &a.TaskTimeoutS)
+		&a.GitRepoURL, &a.GitBranch, &a.GitCredentialID, &a.LastImportAt, &a.SupabaseConnectionID, &a.FirebaseDistributionID, &emails, &a.TaskTimeoutS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -91,7 +95,7 @@ func scanApp(sc scanner) (*App, error) {
 const appSelectCols = `id, owner_token, external_user_id, external_project_id,
 	       name, description, tags, latest_snapshot_id, created_at, updated_at, runtime_preset,
 	       git_repo_url, git_branch, git_credential_id, last_import_at, supabase_connection_id,
-	       notify_emails, task_timeout_s`
+	       firebase_distribution_id, notify_emails, task_timeout_s`
 
 // SetAppImported stamps last_import_at after a successful Git clone.
 func (s *Store) SetAppImported(ctx context.Context, id string, at int64) error {
@@ -193,6 +197,14 @@ func (s *Store) UpdateApp(ctx context.Context, id, ownerToken string, patch AppP
 				args = append(args, nil)
 			} else {
 				args = append(args, *patch.SupabaseConnectionID)
+			}
+		}
+		if patch.FirebaseDistributionID != nil {
+			sets = append(sets, "firebase_distribution_id = ?")
+			if *patch.FirebaseDistributionID == "" {
+				args = append(args, nil)
+			} else {
+				args = append(args, *patch.FirebaseDistributionID)
 			}
 		}
 		if patch.NotifyEmails != nil {

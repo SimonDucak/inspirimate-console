@@ -203,7 +203,10 @@ type Server struct {
 
 	// ApkExec runs `flutter build apk` inside the sandbox. Nil uses Docker.
 	// Tests inject a fake. apkMu guards apkRunning and the on-disk history.
-	ApkExec    apkExecer
+	ApkExec apkExecer
+	// Firebase uploads a finished APK to App Distribution. Nil uses the
+	// real Firebase API. Tests inject a fake.
+	Firebase   apkFirebasePublisher
 	apkMu      sync.Mutex
 	apkRunning map[string]string // sandbox id -> build id, while a build is in this process
 }
@@ -314,6 +317,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/supabase-connections", s.observe("GET /v1/supabase-connections", s.v1ListSupabaseConnections))
 	mux.HandleFunc("PATCH /v1/supabase-connections/{id}", s.observe("PATCH /v1/supabase-connections/{id}", s.v1UpdateSupabaseConnection))
 	mux.HandleFunc("DELETE /v1/supabase-connections/{id}", s.observe("DELETE /v1/supabase-connections/{id}", s.v1DeleteSupabaseConnection))
+	mux.HandleFunc("POST /v1/firebase-distributions", s.observe("POST /v1/firebase-distributions", s.v1CreateFirebaseDistribution))
+	mux.HandleFunc("GET /v1/firebase-distributions", s.observe("GET /v1/firebase-distributions", s.v1ListFirebaseDistributions))
+	mux.HandleFunc("PATCH /v1/firebase-distributions/{id}", s.observe("PATCH /v1/firebase-distributions/{id}", s.v1UpdateFirebaseDistribution))
+	mux.HandleFunc("DELETE /v1/firebase-distributions/{id}", s.observe("DELETE /v1/firebase-distributions/{id}", s.v1DeleteFirebaseDistribution))
 
 	// Console auth — the control plane is the login authority. status/login/setup
 	// are exempt from the auth middleware (see internal/auth/middleware.go).

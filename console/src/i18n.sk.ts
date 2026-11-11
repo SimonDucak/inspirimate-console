@@ -34,8 +34,31 @@ export const sk: Record<string, string> = {
     'JSON kľúč service accountu. Účet potrebuje rolu Firebase App Distribution Admin a musí byť zapnuté Firebase App Distribution API.',
   'A tester group alias, tester emails, or both. Those Google accounts receive the install link.':
     'Alias skupiny testerov, e-maily testerov, alebo oboje. Tieto Google účty dostanú odkaz na inštaláciu.',
-  'No Firebase distribution connection yet. This screen is a preview and does not save anything.':
-    'Zatiaľ žiadne pripojenie distribúcie Firebase. Táto obrazovka je náhľad a nič neukladá.',
+  'No Firebase distribution connections yet. Add one here, then choose it on the project.':
+    'Zatiaľ žiadne pripojenie distribúcie Firebase. Pridajte ho tu a potom ho vyberte na projekte.',
+  'Service account stored encrypted': 'Service account je uložený šifrovane',
+  'Firebase distribution saved': 'Distribúcia Firebase bola uložená',
+  'Firebase distribution removed': 'Distribúcia Firebase bola odstránená',
+  'Save connection': 'Uložiť pripojenie',
+  'Edit connection': 'Upraviť pripojenie',
+  Edit: 'Upraviť',
+  Remove: 'Odstrániť',
+  'Google Cloud → IAM → Service accounts → Keys → Add key → JSON. Role: Firebase App Distribution Admin. The key is stored encrypted and is not shown again.':
+    'Google Cloud → IAM → Service accounts → Keys → Add key → JSON. Rola: Firebase App Distribution Admin. Kľúč sa uloží šifrovane a znova sa nezobrazí.',
+  'Sent to testers': 'Odoslané testerom',
+  Sending: 'Odosiela sa',
+  'Open the install link': 'Otvoriť odkaz na inštaláciu',
+  'Testers open this link on Android with the invited Google account.':
+    'Testeri otvoria tento odkaz na Androide s pozvaným Google účtom.',
+  'Firebase emailed the invited testers.': 'Firebase poslal e-mail pozvaným testerom.',
+  'No Firebase distribution connection is attached to this project.':
+    'K tomuto projektu nie je pripojená distribúcia Firebase.',
+  'Uploading the APK to Firebase.': 'APK sa nahráva do Firebase.',
+  'Testers were not emailed.': 'Testerom sa e-mail neposlal.',
+  'Attach a Firebase distribution connection to email testers.':
+    'Pripojte distribúciu Firebase, aby testeri dostali e-mail.',
+  'Run a pipeline for this Android app. A successful APK is sent to the Firebase distribution connection on the project. Testers get an email and open the link on Android with that Google account. Only the latest successful APK can be downloaded.':
+    'Spustite pipeline pre túto Android aplikáciu. Úspešné APK sa odošle do pripojenia Firebase na projekte. Testeri dostanú e-mail a odkaz otvoria na Androide tým Google účtom. Stiahnuť sa dá len posledné úspešné APK.',
   'Service account checked, key not kept': 'Service account skontrolovaný, kľúč sa neukladá',
   Group: 'Skupina',
   'New connection': 'Nové pripojenie',

@@ -3,6 +3,7 @@ import {
   api,
   App as TApp,
   SupabaseConnection,
+  FirebaseDistribution,
   Sandbox,
   Process,
   AppEvent,
@@ -187,6 +188,86 @@ function SupabaseLinkDialog({
   )
 }
 
+function FirebaseLinkDialog({
+  app,
+  busy,
+  close,
+  save,
+  goSettings,
+}: {
+  app: TApp
+  busy: boolean
+  close: () => void
+  save: (connectionId: string) => void
+  goSettings: (section?: string) => void
+}) {
+  const [connections, setConnections] = useState<FirebaseDistribution[]>([])
+  const [chosen, setChosen] = useState(app.firebase_distribution_id || '')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api
+      .listFirebaseDistributions()
+      .then((rows) => {
+        setConnections(rows)
+        setError('')
+      })
+      .catch((err: Error) => setError(err.message || 'Could not load Firebase distributions'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return (
+    <Dialog title="Firebase distribution" close={close}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          save(chosen)
+        }}
+      >
+        <p style={{ color: c.muted, fontSize: 12.5, lineHeight: 1.6, marginTop: 0 }}>
+          Choose the saved connection this project uses. The service account stays in Settings. A finished APK is uploaded there and the testers get an install link.
+        </p>
+        {error && (
+          <p role="alert" style={{ color: c.muted, fontSize: 12.5 }}>
+            {error}
+          </p>
+        )}
+        {loading && <p style={{ color: c.muted, fontSize: 12.5 }}>Loading connections…</p>}
+        {!loading && connections.length === 0 && (
+          <p style={{ color: c.muted, fontSize: 12.5 }}>
+            No Firebase distribution connections yet.{' '}
+            <button type="button" className="text-button" onClick={() => goSettings('firebase')}>
+              Add one in Settings
+            </button>
+          </p>
+        )}
+        {connections.length > 0 && (
+          <label className="form-field">
+            Connection
+            <select value={chosen} onChange={(event) => setChosen(event.target.value)} data-testid="firebase-link-select">
+              <option value="">None</option>
+              {connections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.name} · {connection.app_id}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="dialog-actions">
+          <Btn onClick={close} type="button">
+            Cancel
+          </Btn>
+          <Btn type="submit" variant="primary" disabled={busy || loading || connections.length === 0}>
+            Save
+          </Btn>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
 export function AppView({
   appId,
   initialTab,
@@ -229,6 +310,7 @@ export function AppView({
   const [rename, setRename] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [supabaseOpen, setSupabaseOpen] = useState(false)
+  const [firebaseOpen, setFirebaseOpen] = useState(false)
   const [notifyOpen, setNotifyOpen] = useState(false)
   const [notifyDraft, setNotifyDraft] = useState('')
   const [timeoutOpen, setTimeoutOpen] = useState(false)
@@ -519,7 +601,7 @@ export function AppView({
               </button>
               <button
                 onClick={() => {
-                  goSettings('firebase')
+                  setFirebaseOpen(true)
                   setMenu(false)
                 }}
               >
@@ -766,6 +848,20 @@ export function AppView({
               setApp(await api.updateApp(appId, { supabase_connection_id: connectionId }))
               setSupabaseOpen(false)
             }, connectionId ? 'Supabase connection linked' : 'Supabase connection removed')
+          }
+        />
+      )}
+      {firebaseOpen && (
+        <FirebaseLinkDialog
+          app={app}
+          busy={busy}
+          close={() => !busy && setFirebaseOpen(false)}
+          goSettings={goSettings}
+          save={(connectionId) =>
+            void act(async () => {
+              setApp(await api.updateApp(appId, { firebase_distribution_id: connectionId }))
+              setFirebaseOpen(false)
+            }, connectionId ? 'Firebase distribution linked' : 'Firebase distribution removed')
           }
         />
       )}

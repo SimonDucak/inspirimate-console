@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -249,6 +250,17 @@ func TestApkLintSkipIsRemovedAfterBuildSetup(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "checkReleaseBuilds = false") {
 		t.Fatalf("init script missing lint skip:\n%s", body)
+	}
+	gradleHome := filepath.Dir(filepath.Dir(script))
+	for _, p := range []string{gradleHome, filepath.Dir(script), filepath.Join(gradleHome, "tmp"), script} {
+		st, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		uid := st.Sys().(*syscall.Stat_t).Uid
+		if uid != 1000 {
+			t.Fatalf("%s owned by uid %d; sandbox user is 1000", p, uid)
+		}
 	}
 	restore()
 	if _, err := os.Stat(script); !os.IsNotExist(err) {

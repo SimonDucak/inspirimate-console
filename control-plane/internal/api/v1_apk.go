@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/docker"
+	"github.com/tastyeffectco/sandboxd/control-plane/internal/firebaseappdist"
 	"github.com/tastyeffectco/sandboxd/control-plane/internal/store"
 )
 
@@ -28,6 +29,11 @@ const (
 	apkStatusRunning   = "running"
 	apkStatusSucceeded = "succeeded"
 	apkStatusFailed    = "failed"
+
+	apkFirebaseRunning   = "running"
+	apkFirebaseSucceeded = "succeeded"
+	apkFirebaseFailed    = "failed"
+	apkFirebaseSkipped   = "skipped"
 
 	apkLogLimit     = 8 << 10
 	apkCaptureLimit = 32 << 10
@@ -62,12 +68,22 @@ var gradleCaps = [][2]string{
 }
 
 type apkBuild struct {
-	ID         string `json:"id"`
-	Version    string `json:"version,omitempty"`
-	Status     string `json:"status"`
-	StartedAt  string `json:"started_at"`
-	FinishedAt string `json:"finished_at,omitempty"`
-	Log        string `json:"log,omitempty"`
+	ID                 string `json:"id"`
+	Version            string `json:"version,omitempty"`
+	Status             string `json:"status"`
+	StartedAt          string `json:"started_at"`
+	FinishedAt         string `json:"finished_at,omitempty"`
+	Log                string `json:"log,omitempty"`
+	FirebaseStatus     string `json:"firebase_status,omitempty"`
+	FirebaseLog        string `json:"firebase_log,omitempty"`
+	TestingURI         string `json:"testing_uri,omitempty"`
+	FirebaseConsoleURI string `json:"firebase_console_uri,omitempty"`
+}
+
+// apkFirebasePublisher uploads one APK and invites testers. *firebaseappdist.Client
+// implements it.
+type apkFirebasePublisher interface {
+	Publish(ctx context.Context, in firebaseappdist.Request) (firebaseappdist.Release, error)
 }
 
 type apkBuildView struct {
@@ -144,15 +160,27 @@ func (s *Server) failStaleApkLocked(appDir, sandboxID string) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i := range h.Builds {
 		b := &h.Builds[i]
-		if b.Status != apkStatusRunning || b.ID == live {
+		if b.ID == live {
 			continue
 		}
-		b.Status = apkStatusFailed
-		b.FinishedAt = now
-		if strings.TrimSpace(b.Log) == "" {
-			b.Log = apkInterruptedLog
+		if b.Status == apkStatusRunning {
+			b.Status = apkStatusFailed
+			b.FinishedAt = now
+			if strings.TrimSpace(b.Log) == "" {
+				b.Log = apkInterruptedLog
+			}
+			if b.FirebaseStatus == "" || b.FirebaseStatus == apkFirebaseRunning {
+				b.FirebaseStatus = apkFirebaseSkipped
+				b.FirebaseLog = "Skipped because the APK build failed."
+			}
+			changed = true
+			continue
 		}
-		changed = true
+		if b.FirebaseStatus == apkFirebaseRunning {
+			b.FirebaseStatus = apkFirebaseFailed
+			b.FirebaseLog = apkInterruptedLog
+			changed = true
+		}
 	}
 	if changed {
 		_ = saveApkHistory(appDir, h)
@@ -425,8 +453,8 @@ func (s *Server) finishApkBuild(sandboxID, buildID string, res docker.ExecResult
 		logText = apkOutputLog(res, err)
 	}
 
+	version := ""
 	s.apkMu.Lock()
-	defer s.apkMu.Unlock()
 	h := loadApkHistory(app)
 	for i := range h.Builds {
 		if h.Builds[i].ID != buildID {
@@ -435,6 +463,106 @@ func (s *Server) finishApkBuild(sandboxID, buildID string, res docker.ExecResult
 		h.Builds[i].Status = status
 		h.Builds[i].FinishedAt = time.Now().UTC().Format(time.RFC3339)
 		h.Builds[i].Log = strings.TrimSpace(logText)
+		version = h.Builds[i].Version
+		if status != apkStatusSucceeded {
+			h.Builds[i].FirebaseStatus = apkFirebaseSkipped
+			h.Builds[i].FirebaseLog = "Skipped because the APK build failed."
+		} else {
+			// Mark the upload running in the same write as the APK result.
+			// Otherwise a status poll can see a finished APK, stop polling,
+			// and miss the Firebase result.
+			h.Builds[i].FirebaseStatus = apkFirebaseRunning
+			h.Builds[i].FirebaseLog = "Uploading the APK to Firebase."
+		}
+		break
+	}
+	_ = saveApkHistory(app, h)
+	s.apkMu.Unlock()
+	if status == apkStatusSucceeded {
+		s.publishApk(sandboxID, buildID, version)
+	}
+}
+
+func (s *Server) firebasePublisher() apkFirebasePublisher {
+	if s.Firebase != nil {
+		return s.Firebase
+	}
+	return firebaseappdist.New()
+}
+
+// publishApk sends the canonical APK to the Firebase connection attached to
+// the sandbox's project. A project with no connection records a skipped stage
+// and leaves the APK download in place.
+func (s *Server) publishApk(sandboxID, buildID, version string) {
+	if s.Store == nil || s.Secrets == nil {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseSkipped, "No Firebase distribution connection is attached to this project.", "", "")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+	sb, err := s.Store.Get(ctx, sandboxID)
+	if err != nil || !sb.AppID.Valid || sb.AppID.String == "" {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseSkipped, "No Firebase distribution connection is attached to this project.", "", "")
+		return
+	}
+	app, err := s.Store.GetApp(ctx, sb.AppID.String)
+	if err != nil || !app.FirebaseDistributionID.Valid || app.FirebaseDistributionID.String == "" {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseSkipped, "No Firebase distribution connection is attached to this project.", "", "")
+		return
+	}
+	conn, found, err := s.Store.GetFirebaseDistribution(ctx, app.OwnerToken, app.FirebaseDistributionID.String)
+	if err != nil || !found {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseFailed, "The Firebase distribution connection on this project is missing.", "", "")
+		return
+	}
+	enc, nonce, found, err := s.Store.GetFirebaseDistributionSecret(ctx, app.OwnerToken, conn.ID)
+	if err != nil || !found {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseFailed, "The Firebase service account could not be read.", "", "")
+		return
+	}
+	account, err := s.Secrets.Open(enc, nonce)
+	if err != nil {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseFailed, "The Firebase service account could not be read.", "", "")
+		return
+	}
+	apk, err := os.ReadFile(apkCanonicalPath(s.appDirFor(sandboxID)))
+	if err != nil {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseFailed, "The APK file is missing.", "", "")
+		return
+	}
+	s.setApkFirebase(sandboxID, buildID, apkFirebaseRunning, "Uploading the APK to Firebase.", "", "")
+	rel, err := s.firebasePublisher().Publish(ctx, firebaseappdist.Request{
+		AccountJSON:  account,
+		AppID:        conn.AppID,
+		APK:          apk,
+		FileName:     "app-release.apk",
+		GroupAlias:   conn.GroupAlias,
+		TesterEmails: decodeStringList(conn.TesterEmails),
+	})
+	if err != nil {
+		s.setApkFirebase(sandboxID, buildID, apkFirebaseFailed, err.Error(), "", "")
+		return
+	}
+	note := "Firebase emailed the invited testers."
+	if version != "" {
+		note = "Firebase emailed the invited testers. Version " + version + "."
+	}
+	s.setApkFirebase(sandboxID, buildID, apkFirebaseSucceeded, note, rel.TestingURI, rel.ConsoleURI)
+}
+
+func (s *Server) setApkFirebase(sandboxID, buildID, status, logText, testingURI, consoleURI string) {
+	app := s.appDirFor(sandboxID)
+	s.apkMu.Lock()
+	defer s.apkMu.Unlock()
+	h := loadApkHistory(app)
+	for i := range h.Builds {
+		if h.Builds[i].ID != buildID {
+			continue
+		}
+		h.Builds[i].FirebaseStatus = status
+		h.Builds[i].FirebaseLog = tailText(strings.TrimSpace(logText), apkLogLimit)
+		h.Builds[i].TestingURI = testingURI
+		h.Builds[i].FirebaseConsoleURI = consoleURI
 		break
 	}
 	_ = saveApkHistory(app, h)
@@ -602,14 +730,29 @@ const apkLintInitScript = `gradle.projectsLoaded {
 // and returns a restore that removes it. Gradle loads ~/.gradle/init.d
 // automatically. The home directory is the workspace mount, two levels
 // above the app directory.
+//
+// The control plane creates this directory. The APK command then runs as
+// the sandbox user and needs to create ~/.gradle/tmp inside it. A fresh
+// home has no .gradle yet, so the directory must be owned by uid 1000 or
+// that mkdir fails.
 func installApkLintSkip(appDir string) (restore func(), err error) {
-	dir := filepath.Join(filepath.Dir(filepath.Dir(appDir)), ".gradle", "init.d")
+	gradleHome := filepath.Join(filepath.Dir(filepath.Dir(appDir)), ".gradle")
+	dir := filepath.Join(gradleHome, "init.d")
+	tmp := filepath.Join(gradleHome, "tmp")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		return nil, err
 	}
 	path := filepath.Join(dir, "sandboxd-apk-lint.gradle")
 	if err := os.WriteFile(path, []byte(apkLintInitScript), 0o644); err != nil {
 		return nil, err
+	}
+	for _, p := range []string{gradleHome, dir, tmp, path} {
+		if err := os.Chown(p, 1000, 1000); err != nil {
+			return nil, err
+		}
 	}
 	return func() { _ = os.Remove(path) }, nil
 }

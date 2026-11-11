@@ -242,6 +242,91 @@ paths:
         "204": { description: Deleted }
         "404": { description: No such connection }
 
+  /v1/firebase-distributions:
+    post:
+      operationId: createFirebaseDistribution
+      tags: [apps]
+      summary: Store an owner-scoped Firebase App Distribution connection. The service account JSON is write-only and encrypted at rest.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, app_id, service_account]
+              properties:
+                name: { type: string }
+                app_id: { type: string, description: "Firebase Android app id, 1:123:android:abc." }
+                group_alias: { type: string, description: "Tester group alias. Optional when tester_emails is set." }
+                tester_emails: { type: array, items: { type: string, format: email } }
+                service_account: { type: string, description: "Service account JSON key. Write-only, never returned." }
+      responses:
+        "201": { description: Created (metadata only; the private key is never returned) }
+        "400": { description: Invalid request }
+        "409": { description: A connection with that name already exists }
+        "503": { description: Connection store not configured }
+    get:
+      operationId: listFirebaseDistributions
+      tags: [apps]
+      summary: List the tenant's Firebase App Distribution connections (metadata only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        app_id: { type: string }
+                        project_id: { type: string }
+                        client_email: { type: string }
+                        group_alias: { type: string }
+                        tester_emails: { type: array, items: { type: string } }
+                        secret_set: { type: boolean }
+                        created_at: { type: string }
+                        updated_at: { type: string }
+  /v1/firebase-distributions/{id}:
+    patch:
+      operationId: updateFirebaseDistribution
+      tags: [apps]
+      summary: Update a Firebase distribution connection. A blank service account keeps the saved key.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, app_id]
+              properties:
+                name: { type: string }
+                app_id: { type: string }
+                group_alias: { type: string }
+                tester_emails: { type: array, items: { type: string, format: email } }
+                service_account: { type: string, description: "Replacement JSON key. Blank keeps the saved key." }
+      responses:
+        "200": { description: Updated (metadata only) }
+        "400": { description: Invalid request }
+        "404": { description: No such connection }
+        "409": { description: A connection with that name already exists }
+    delete:
+      operationId: deleteFirebaseDistribution
+      tags: [apps]
+      summary: Delete a Firebase distribution connection and unlink it from projects
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: No such connection }
+
   /v1/upgrade:
     get:
       summary: In-place upgrade status
@@ -1318,6 +1403,69 @@ paths:
         "200": { description: Destroyed }
         "404": { $ref: "#/components/responses/Error" }
 
+  /v1/sandboxes/{id}/apk-builds:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: listApkBuilds
+      tags: [sandboxes]
+      summary: List Android APK pipeline runs for a sandbox
+      responses:
+        "200":
+          description: Newest first. downloadable is true only for the latest succeeded APK.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  builds:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        version: { type: string }
+                        status: { type: string, description: "running, succeeded, or failed" }
+                        started_at: { type: string }
+                        finished_at: { type: string }
+                        log: { type: string }
+                        firebase_status: { type: string, description: "running, succeeded, failed, or skipped" }
+                        firebase_log: { type: string }
+                        testing_uri: { type: string, description: "HTTPS link invited testers open on Android" }
+                        firebase_console_uri: { type: string }
+                        downloadable: { type: boolean }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: startApkBuild
+      tags: [sandboxes]
+      summary: Build a release APK and, when the project has a Firebase distribution connection, upload it and invite testers
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: { type: string, description: "Optional label stored with the build" }
+      responses:
+        "202": { description: Build accepted. The APK build, then the Firebase upload, continue in the background. }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/sandboxes/{id}/apk-builds/latest:
+    parameters: [ { $ref: "#/components/parameters/Id" } ]
+    get:
+      operationId: downloadLatestApk
+      tags: [sandboxes]
+      summary: Download the latest succeeded release APK
+      responses:
+        "200":
+          description: APK file
+          content:
+            application/vnd.android.package-archive:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/Error" }
+
   /v1/sandboxes/{id}/start:
     parameters: [ { $ref: "#/components/parameters/Id" } ]
     post:
@@ -1830,6 +1978,7 @@ components:
         runtime_preset: { type: string, description: "Default runtime preset id for new sandboxes." }
         current_sandbox_id: { type: string, description: "Empty when the app has no live sandbox." }
         supabase_connection_id: { type: string, description: "Saved Supabase connection this project uses. Absent when none is linked." }
+        firebase_distribution_id: { type: string, description: "Saved Firebase App Distribution connection this project uses. Absent when none is linked." }
         notify_emails: { type: array, items: { type: string, format: email }, description: "Addresses emailed when the coding agent finishes. Empty when none are set." }
         task_timeout_s: { type: integer, description: "Per-project agent time limit in seconds. 0 uses the 10 minute default. Maximum 86400 (24 hours)." }
         created_at: { type: string, format: date-time }
@@ -1871,6 +2020,7 @@ components:
         description: { type: string }
         tags: { type: array, items: { type: string } }
         supabase_connection_id: { type: string, description: "Saved Supabase connection id. Empty string removes the link." }
+        firebase_distribution_id: { type: string, description: "Saved Firebase App Distribution connection id. Empty string removes the link." }
         notify_emails: { type: array, items: { type: string, format: email }, description: "Replace the addresses emailed when the coding agent finishes. An empty array turns notifications off." }
         task_timeout_s: { type: integer, minimum: 0, maximum: 86400, description: "Per-project agent time limit in seconds. 0 restores the 10 minute default." }
     ConfigItem:

@@ -48,4 +48,24 @@ describe('DeploymentTab', () => {
     expect((screen.getByRole('tab', { name: /iOS/ }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('tab', { name: /Web/ }) as HTMLButtonElement).disabled).toBe(true)
   })
+
+  it('shows the tester install link after Firebase accepts the APK', async () => {
+    vi.mocked(api.listApkBuilds).mockResolvedValue([
+      {
+        id: 'sent',
+        status: 'succeeded',
+        started_at: '2020-01-02T00:00:00Z',
+        version: '1.0.0',
+        firebase_status: 'succeeded',
+        testing_uri: 'https://appdistribution.firebase.google.com/testerapps/example',
+        firebase_log: 'Firebase emailed the invited testers.',
+      },
+    ])
+    render(<DeploymentTab sb={sb} onError={() => {}} toast={() => {}} />)
+    expect(await screen.findByText('Sent to testers')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('pipeline-sent'))
+    const link = await screen.findByTestId('firebase-testing-link')
+    expect(link.getAttribute('href')).toBe('https://appdistribution.firebase.google.com/testerapps/example')
+    expect(screen.getByText('Firebase emailed the invited testers.')).toBeTruthy()
+  })
 })

@@ -11,6 +11,7 @@ export interface App {
   current_sandbox_id?: string
   git?: { repo_url: string; branch?: string; credential_id?: string }
   supabase_connection_id?: string
+  firebase_distribution_id?: string
   notify_emails?: string[]
   task_timeout_s?: number
   created_at: string
@@ -216,6 +217,19 @@ export interface GitCredential {
 
 // Supabase connection metadata (GET /v1/supabase-connections). The personal
 // access token is write-only: sent on create or when replacing, never returned.
+// Firebase App Distribution connection. The service account JSON is write-only.
+export interface FirebaseDistribution {
+  id: string
+  name: string
+  app_id: string
+  project_id: string
+  client_email: string
+  group_alias: string
+  tester_emails: string[]
+  secret_set: boolean
+  created_at: string
+}
+
 export interface SupabaseConnection {
   id: string
   name: string
@@ -439,6 +453,23 @@ export const api = {
     b: { name: string; project_ref: string; features: string[]; management: string[]; token?: string },
   ) => req<SupabaseConnection>('PATCH', `/v1/supabase-connections/${id}`, b),
   deleteSupabaseConnection: (id: string) => req<unknown>('DELETE', `/v1/supabase-connections/${id}`),
+
+  // Firebase App Distribution. The service account JSON is sent on create and
+  // when replacing the key. It is never returned.
+  listFirebaseDistributions: () =>
+    req<{ connections: FirebaseDistribution[] }>('GET', '/v1/firebase-distributions').then((r) => r.connections || []),
+  createFirebaseDistribution: (b: {
+    name: string
+    app_id: string
+    group_alias?: string
+    tester_emails?: string[]
+    service_account: string
+  }) => req<FirebaseDistribution>('POST', '/v1/firebase-distributions', b),
+  updateFirebaseDistribution: (
+    id: string,
+    b: { name: string; app_id: string; group_alias?: string; tester_emails?: string[]; service_account?: string },
+  ) => req<FirebaseDistribution>('PATCH', `/v1/firebase-distributions/${id}`, b),
+  deleteFirebaseDistribution: (id: string) => req<unknown>('DELETE', `/v1/firebase-distributions/${id}`),
   runtimeInspect: (appId: string) => req<RuntimeInspect>('GET', `/v1/apps/${appId}/runtime-inspect`),
   appManifest: (appId: string) => req<AppManifest>('GET', `/v1/apps/${appId}/runtime/manifest`),
   validateManifest: (mfst: string) =>
@@ -526,7 +557,15 @@ export const api = {
   // server rejects an empty name.
   updateApp: (
     id: string,
-    patch: { name?: string; description?: string; tags?: string[]; supabase_connection_id?: string; notify_emails?: string[]; task_timeout_s?: number },
+    patch: {
+      name?: string
+      description?: string
+      tags?: string[]
+      supabase_connection_id?: string
+      firebase_distribution_id?: string
+      notify_emails?: string[]
+      task_timeout_s?: number
+    },
   ) => req<App>('PATCH', `/v1/apps/${id}`, patch),
   // Full delete: the app AND everything it owns (sandbox container, workspace
   // image, snapshots, and all app rows). Irreversible.

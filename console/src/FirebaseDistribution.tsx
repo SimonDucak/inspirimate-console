@@ -1,16 +1,7 @@
-import { useState } from 'react'
-import { Btn, Card, H, Input, Pill, c, mono } from './design/kit'
+import { useEffect, useState } from 'react'
+import { api, FirebaseDistribution as FirebaseConnection } from './api'
+import { Btn, Card, H, Input, c, mono } from './design/kit'
 import { useT } from './i18n'
-
-type Preview = {
-  id: string
-  name: string
-  appId: string
-  projectId: string
-  clientEmail: string
-  group: string
-  emails: string[]
-}
 
 type Draft = {
   name: string
@@ -43,9 +34,7 @@ function validEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
-// readAccount checks the JSON shape and returns only the two labels we show.
-// The private key is never copied into the preview.
-function readAccount(raw: string): { projectId: string; clientEmail: string } | string {
+function readAccount(raw: string): true | string {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -65,21 +54,55 @@ function readAccount(raw: string): { projectId: string; clientEmail: string } | 
   if (typeof account.private_key !== 'string' || !account.private_key.includes('PRIVATE KEY')) {
     return 'The JSON needs a private_key. Download the key file again.'
   }
-  return { projectId: account.project_id.trim(), clientEmail: account.client_email.trim() }
+  return true
 }
 
 export function FirebaseDistribution({ toast }: { toast: (message: string) => void }) {
   const t = useT()
-  const [previews, setPreviews] = useState<Preview[]>([])
-  const [editing, setEditing] = useState(false)
+  const [connections, setConnections] = useState<FirebaseConnection[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<string | null>(null)
   const [form, setForm] = useState<Draft>(emptyDraft)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const save = () => {
+  const load = () => {
+    setLoading(true)
+    api
+      .listFirebaseDistributions()
+      .then((rows) => {
+        setConnections(rows)
+        setError('')
+      })
+      .catch((err: Error) => setError(err.message || t('Could not load Firebase distributions')))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(load, [])
+
+  const edit = (connection?: FirebaseConnection) => {
+    setError('')
+    setEditing(connection?.id || '')
+    setForm(
+      connection
+        ? {
+            name: connection.name,
+            appId: connection.app_id,
+            serviceAccount: '',
+            group: connection.group_alias || '',
+            emails: (connection.tester_emails || []).join('\n'),
+          }
+        : emptyDraft(),
+    )
+  }
+
+  const save = async () => {
     const name = form.name.trim()
     const appId = form.appId.trim()
     const group = form.group.trim()
     const emails = emailList(form.emails)
+    const existing = connections.find((item) => item.id === editing)
+    const account = form.serviceAccount.trim()
     if (!name) {
       setError(t('Give the connection a name.'))
       return
@@ -88,10 +111,16 @@ export function FirebaseDistribution({ toast }: { toast: (message: string) => vo
       setError(t('The Android app id looks like 1:1234567890:android:abcdef.'))
       return
     }
-    const account = readAccount(form.serviceAccount.trim())
-    if (typeof account === 'string') {
-      setError(t(account))
+    if (!existing && !account) {
+      setError(t('Paste the whole service account JSON file.'))
       return
+    }
+    if (account) {
+      const checked = readAccount(account)
+      if (checked !== true) {
+        setError(t(checked))
+        return
+      }
     }
     if (!group && emails.length === 0) {
       setError(t('Add a tester group or at least one tester email.'))
@@ -101,30 +130,51 @@ export function FirebaseDistribution({ toast }: { toast: (message: string) => vo
       setError(t('One of the tester emails is not a valid address.'))
       return
     }
-    setPreviews((rows) => [
-      {
-        id: `${Date.now()}`,
-        name,
-        appId,
-        projectId: account.projectId,
-        clientEmail: account.clientEmail,
-        group,
-        emails,
-      },
-      ...rows,
-    ])
-    setForm(emptyDraft())
-    setEditing(false)
+    setBusy(true)
     setError('')
-    toast(t('Preview only. This connection is not saved on the instance yet.'))
+    const body = {
+      name,
+      app_id: appId,
+      group_alias: group,
+      tester_emails: emails,
+      ...(account ? { service_account: account } : {}),
+    }
+    try {
+      if (existing) await api.updateFirebaseDistribution(existing.id, body)
+      else await api.createFirebaseDistribution({ ...body, service_account: account })
+      setForm(emptyDraft())
+      setEditing(null)
+      toast(t('Firebase distribution saved'))
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Could not save the connection'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (id: string) => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      await api.deleteFirebaseDistribution(id)
+      if (editing === id) setEditing(null)
+      toast(t('Firebase distribution removed'))
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Could not remove the connection'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
     <Card style={{ padding: 16, marginBottom: 12 }} data-testid="settings-firebase-distribution">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <H>{t('Firebase distribution')}</H>
-        {!editing && (
-          <Btn sm style={{ marginLeft: 'auto' }} data-testid="firebase-add" onClick={() => setEditing(true)}>
+        {editing === null && (
+          <Btn sm style={{ marginLeft: 'auto' }} data-testid="firebase-add" onClick={() => edit()}>
             {t('Add connection')}
           </Btn>
         )}
@@ -148,41 +198,53 @@ export function FirebaseDistribution({ toast }: { toast: (message: string) => vo
           {error}
         </p>
       )}
-      {previews.length === 0 && !editing && (
+      {loading && connections.length === 0 && editing === null && (
         <div style={{ padding: 16, background: c.panel2, borderRadius: 8, color: c.muted, fontSize: 12.5 }}>
-          {t('No Firebase distribution connection yet. This screen is a preview and does not save anything.')}
+          {t('Loading…')}
         </div>
       )}
-      {previews.map((row) => (
+      {!loading && connections.length === 0 && editing === null && (
+        <div style={{ padding: 16, background: c.panel2, borderRadius: 8, color: c.muted, fontSize: 12.5 }}>
+          {t('No Firebase distribution connections yet. Add one here, then choose it on the project.')}
+        </div>
+      )}
+      {connections.map((row) => (
         <div key={row.id} style={{ borderTop: `1px solid ${c.border}`, padding: '14px 0' }} data-testid="firebase-preview">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <b style={{ fontSize: 13 }}>{row.name}</b>
-            <Pill tone="warn">{t('Preview')}</Pill>
-            <span style={{ color: c.muted2, fontSize: 11.5 }}>{t('Service account checked, key not kept')}</span>
+            <span style={{ color: c.muted2, fontSize: 11.5 }}>{t('Service account stored encrypted')}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <Btn sm type="button" onClick={() => edit(row)}>
+                {t('Edit')}
+              </Btn>
+              <Btn sm type="button" onClick={() => void remove(row.id)}>
+                {t('Remove')}
+              </Btn>
+            </span>
           </div>
           <div style={{ ...mono, color: c.muted, fontSize: 11.5, margin: '7px 0', overflowWrap: 'anywhere' }}>
-            {row.appId}
+            {row.app_id}
           </div>
           <div style={{ color: c.muted, fontSize: 12 }}>
-            {row.projectId} · {row.clientEmail}
+            {row.project_id} · {row.client_email}
           </div>
           <div style={{ color: c.muted, fontSize: 12, marginTop: 4 }}>
-            {row.group ? `${t('Group')} ${row.group}` : null}
-            {row.group && row.emails.length > 0 ? ' · ' : null}
-            {row.emails.length > 0 ? row.emails.join(', ') : null}
+            {row.group_alias ? `${t('Group')} ${row.group_alias}` : null}
+            {row.group_alias && (row.tester_emails || []).length > 0 ? ' · ' : null}
+            {(row.tester_emails || []).join(', ')}
           </div>
         </div>
       ))}
-      {editing && (
+      {editing !== null && (
         <form
           data-testid="firebase-form"
           onSubmit={(event) => {
             event.preventDefault()
-            save()
+            void save()
           }}
           style={{ display: 'grid', gap: 14, marginTop: 16, paddingTop: 14, borderTop: `1px solid ${c.border}` }}
         >
-          <H size={13}>{t('New connection')}</H>
+          <H size={13}>{editing ? t('Edit connection') : t('New connection')}</H>
           <label style={fieldStyle}>
             {t('Connection name')}
             <Input
@@ -212,7 +274,7 @@ export function FirebaseDistribution({ toast }: { toast: (message: string) => vo
           <label style={fieldStyle}>
             {t('Service account JSON')}
             <textarea
-              required
+              required={!editing}
               value={form.serviceAccount}
               spellCheck={false}
               data-testid="firebase-service-account"
@@ -232,7 +294,7 @@ export function FirebaseDistribution({ toast }: { toast: (message: string) => vo
             />
             <span style={{ fontSize: 11.5 }}>
               {t(
-                'Google Cloud → IAM → Service accounts → Keys → Add key → JSON. Role: Firebase App Distribution Admin. This preview checks the file and then discards the private key.',
+                'Google Cloud → IAM → Service accounts → Keys → Add key → JSON. Role: Firebase App Distribution Admin. The key is stored encrypted and is not shown again.',
               )}
             </span>
           </label>
@@ -270,14 +332,14 @@ export function FirebaseDistribution({ toast }: { toast: (message: string) => vo
             <span style={{ fontSize: 11.5 }}>{t('One Google account per line. Optional when you set a tester group.')}</span>
           </label>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Btn type="submit" data-testid="firebase-save">
-              {t('Check connection')}
+            <Btn type="submit" data-testid="firebase-save" disabled={busy}>
+              {t('Save connection')}
             </Btn>
             <Btn
               type="button"
               variant="ghost"
               onClick={() => {
-                setEditing(false)
+                setEditing(null)
                 setForm(emptyDraft())
                 setError('')
               }}

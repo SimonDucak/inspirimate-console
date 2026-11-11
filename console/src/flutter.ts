@@ -16,6 +16,10 @@ export type ApkBuildRow = {
   finished_at?: string
   log?: string
   downloadable?: boolean
+  firebase_status?: string
+  firebase_log?: string
+  testing_uri?: string
+  firebase_console_uri?: string
 }
 
 export function pubspecIsFlutter(text: string | null | undefined): boolean {

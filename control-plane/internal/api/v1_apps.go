@@ -33,20 +33,21 @@ type v1AppGit struct {
 }
 
 type v1App struct {
-	ID                   string    `json:"id"`
-	Name                 string    `json:"name"`
-	Description          string    `json:"description"`
-	Tags                 []string  `json:"tags"`
-	ExternalUserID       string    `json:"external_user_id,omitempty"`
-	ExternalProjectID    string    `json:"external_project_id,omitempty"`
-	RuntimePreset        string    `json:"runtime_preset,omitempty"`
-	Git                  *v1AppGit `json:"git,omitempty"`
-	SupabaseConnectionID string    `json:"supabase_connection_id,omitempty"`
-	NotifyEmails         []string  `json:"notify_emails"`
-	TaskTimeoutS         int       `json:"task_timeout_s"`
-	CurrentSandboxID     string    `json:"current_sandbox_id,omitempty"`
-	CreatedAt            string    `json:"created_at"`
-	UpdatedAt            string    `json:"updated_at"`
+	ID                     string    `json:"id"`
+	Name                   string    `json:"name"`
+	Description            string    `json:"description"`
+	Tags                   []string  `json:"tags"`
+	ExternalUserID         string    `json:"external_user_id,omitempty"`
+	ExternalProjectID      string    `json:"external_project_id,omitempty"`
+	RuntimePreset          string    `json:"runtime_preset,omitempty"`
+	Git                    *v1AppGit `json:"git,omitempty"`
+	SupabaseConnectionID   string    `json:"supabase_connection_id,omitempty"`
+	FirebaseDistributionID string    `json:"firebase_distribution_id,omitempty"`
+	NotifyEmails           []string  `json:"notify_emails"`
+	TaskTimeoutS           int       `json:"task_timeout_s"`
+	CurrentSandboxID       string    `json:"current_sandbox_id,omitempty"`
+	CreatedAt              string    `json:"created_at"`
+	UpdatedAt              string    `json:"updated_at"`
 }
 
 func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
@@ -78,6 +79,9 @@ func v1AppFromRow(a *store.App, currentSandboxID string) v1App {
 	}
 	if a.SupabaseConnectionID.Valid {
 		out.SupabaseConnectionID = a.SupabaseConnectionID.String
+	}
+	if a.FirebaseDistributionID.Valid {
+		out.FirebaseDistributionID = a.FirebaseDistributionID.String
 	}
 	if a.GitRepoURL.Valid && a.GitRepoURL.String != "" {
 		g := &v1AppGit{RepoURL: a.GitRepoURL.String, Branch: a.GitBranch.String}
@@ -234,12 +238,13 @@ func (s *Server) v1GetApp(w http.ResponseWriter, r *http.Request) {
 }
 
 type v1PatchAppReq struct {
-	Name                 *string   `json:"name"`
-	Description          *string   `json:"description"`
-	Tags                 *[]string `json:"tags"`
-	SupabaseConnectionID *string   `json:"supabase_connection_id"`
-	NotifyEmails         *[]string `json:"notify_emails"`
-	TaskTimeoutS         *int      `json:"task_timeout_s"`
+	Name                   *string   `json:"name"`
+	Description            *string   `json:"description"`
+	Tags                   *[]string `json:"tags"`
+	SupabaseConnectionID   *string   `json:"supabase_connection_id"`
+	FirebaseDistributionID *string   `json:"firebase_distribution_id"`
+	NotifyEmails           *[]string `json:"notify_emails"`
+	TaskTimeoutS           *int      `json:"task_timeout_s"`
 }
 
 // v1PatchApp — PATCH /v1/apps/{id}.
@@ -269,6 +274,21 @@ func (s *Server) v1PatchApp(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		patch.SupabaseConnectionID = &link
+	}
+	if req.FirebaseDistributionID != nil {
+		link := strings.TrimSpace(*req.FirebaseDistributionID)
+		if link != "" {
+			_, found, err := s.Store.GetFirebaseDistribution(r.Context(), tenantToken(r), link)
+			if err != nil {
+				writeV1Err(w, http.StatusInternalServerError, "internal", "could not read firebase distribution")
+				return
+			}
+			if !found {
+				writeV1Err(w, http.StatusBadRequest, "invalid_request", "no such firebase distribution")
+				return
+			}
+		}
+		patch.FirebaseDistributionID = &link
 	}
 	if req.NotifyEmails != nil {
 		emails, err := normalizeNotifyEmails(*req.NotifyEmails)

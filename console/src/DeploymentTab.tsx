@@ -52,7 +52,7 @@ export function DeploymentTab({
     }
   }, [sandboxId, load])
 
-  const busy = builds.some((build) => build.status === 'running')
+  const busy = builds.some((build) => build.status === 'running' || build.firebase_status === 'running')
   useEffect(() => {
     if (!sandboxId || !busy) return
     const timer = setInterval(() => {
@@ -103,7 +103,7 @@ export function DeploymentTab({
         <div role="tabpanel">
           <p className="deploy-help">
             {t(
-              'Run a pipeline for this Android app. Today only the APK build runs. Firebase and user notification are shown as the next stages. Only the latest successful APK can be downloaded.',
+              'Run a pipeline for this Android app. A successful APK is sent to the Firebase distribution connection on the project. Testers get an email and open the link on Android with that Google account. Only the latest successful APK can be downloaded.',
             )}
           </p>
           {!sandboxId ? (
@@ -187,7 +187,9 @@ function PipelineRow({
         </span>
         <time dateTime={build.started_at}>{new Date(build.started_at).toLocaleString()}</time>
         {build.version ? <span className="deployment-version-label">{build.version}</span> : null}
-        <Pill tone={pipelineTone(build.status)}>{t(pipelineLabel(build.status))}</Pill>
+        <Pill tone={pipelineTone(build.firebase_status === 'succeeded' || build.firebase_status === 'running' ? build.firebase_status : build.status)}>
+          {t(pipelineLabel(build))}
+        </Pill>
       </button>
       {open ? <PipelineStages build={build} sandboxId={sandboxId} /> : null}
     </li>
@@ -196,7 +198,9 @@ function PipelineRow({
 
 function PipelineStages({ build, sandboxId }: { build: ApkBuildRow; sandboxId: string }) {
   const t = useT()
-  const later = laterStage(build.status)
+  const firebase = firebaseStage(build)
+  const notify = notifyStage(build)
+  const installLink = build.testing_uri && build.testing_uri.startsWith('https://') ? build.testing_uri : ''
   return (
     <ol className="pipeline-stages">
       <li className="pipeline-stage">
@@ -222,9 +226,14 @@ function PipelineStages({ build, sandboxId }: { build: ApkBuildRow; sandboxId: s
         <div className="pipeline-stage-body">
           <div className="pipeline-stage-head">
             <span>{t('Send to Firebase App Distribution')}</span>
-            <Pill tone={later.tone}>{t(later.label)}</Pill>
+            <Pill tone={pipelineTone(firebase.tone)}>{t(firebase.label)}</Pill>
           </div>
-          <p className="deploy-help">{t(later.firebase)}</p>
+          <p className="deploy-help">{t(firebase.detail)}</p>
+          {installLink ? (
+            <a href={installLink} target="_blank" rel="noopener noreferrer" data-testid="firebase-testing-link">
+              {t('Open the install link')}
+            </a>
+          ) : null}
         </div>
       </li>
       <li className="pipeline-stage">
@@ -232,9 +241,9 @@ function PipelineStages({ build, sandboxId }: { build: ApkBuildRow; sandboxId: s
         <div className="pipeline-stage-body">
           <div className="pipeline-stage-head">
             <span>{t('Notify users')}</span>
-            <Pill tone={later.tone}>{t(later.label)}</Pill>
+            <Pill tone={pipelineTone(notify.tone)}>{t(notify.label)}</Pill>
           </div>
-          <p className="deploy-help">{t(later.notify)}</p>
+          <p className="deploy-help">{t(notify.detail)}</p>
         </div>
       </li>
     </ol>
@@ -257,9 +266,13 @@ function pipelineTone(status: string): 'good' | 'warn' | 'bad' | 'neutral' {
   return 'neutral'
 }
 
-function pipelineLabel(status: string): string {
-  if (status === 'succeeded') return 'APK ready'
-  return statusLabel(status)
+function pipelineLabel(build: ApkBuildRow): string {
+  if (build.status === 'running') return 'Running'
+  if (build.status === 'failed') return 'Failed'
+  if (build.firebase_status === 'running') return 'Sending'
+  if (build.firebase_status === 'succeeded') return 'Sent to testers'
+  if (build.status === 'succeeded') return 'APK ready'
+  return statusLabel(build.status)
 }
 
 function statusLabel(status: string): string {
@@ -269,27 +282,52 @@ function statusLabel(status: string): string {
   return status
 }
 
-function laterStage(status: string): { tone: 'neutral'; label: string; firebase: string; notify: string } {
-  if (status === 'failed') {
+function firebaseStage(build: ApkBuildRow): { tone: string; label: string; detail: string } {
+  if (build.status === 'failed') {
+    return { tone: 'skipped', label: 'Skipped', detail: 'Skipped because the APK build failed.' }
+  }
+  if (build.status === 'running') {
+    return { tone: 'running', label: 'Waiting', detail: 'Waiting for the APK.' }
+  }
+  if (build.firebase_status === 'running') {
+    return { tone: 'running', label: 'Sending', detail: build.firebase_log || 'Uploading the APK to Firebase.' }
+  }
+  if (build.firebase_status === 'succeeded') {
     return {
-      tone: 'neutral',
-      label: 'Skipped',
-      firebase: 'Skipped because the APK build failed.',
-      notify: 'Skipped because the APK build failed.',
+      tone: 'succeeded',
+      label: 'Succeeded',
+      detail: 'Testers open this link on Android with the invited Google account.',
     }
   }
-  if (status === 'running') {
-    return {
-      tone: 'neutral',
-      label: 'Waiting',
-      firebase: 'Waiting for the APK.',
-      notify: 'Waiting for Firebase.',
-    }
+  if (build.firebase_status === 'failed') {
+    return { tone: 'failed', label: 'Failed', detail: build.firebase_log || 'Firebase did not accept the APK.' }
   }
   return {
-    tone: 'neutral',
+    tone: 'skipped',
     label: 'Not connected yet',
-    firebase: 'This will upload the APK and return a tester link.',
-    notify: 'This will tell the invited testers.',
+    detail: build.firebase_log || 'No Firebase distribution connection is attached to this project.',
+  }
+}
+
+function notifyStage(build: ApkBuildRow): { tone: string; label: string; detail: string } {
+  if (build.status === 'failed' || build.status === 'running' || build.firebase_status === 'running') {
+    return firebaseStage(build).tone === 'running'
+      ? { tone: 'running', label: 'Waiting', detail: 'Waiting for Firebase.' }
+      : { tone: 'skipped', label: 'Skipped', detail: 'Skipped because the APK build failed.' }
+  }
+  if (build.firebase_status === 'succeeded') {
+    return {
+      tone: 'succeeded',
+      label: 'Succeeded',
+      detail: build.firebase_log || 'Firebase emailed the invited testers.',
+    }
+  }
+  if (build.firebase_status === 'failed') {
+    return { tone: 'skipped', label: 'Skipped', detail: 'Testers were not emailed.' }
+  }
+  return {
+    tone: 'skipped',
+    label: 'Not connected yet',
+    detail: 'Attach a Firebase distribution connection to email testers.',
   }
 }
